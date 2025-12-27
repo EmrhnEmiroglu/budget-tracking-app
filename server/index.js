@@ -209,6 +209,8 @@ app.post('/api/expenses', authMiddleware, async (req, res) => {
   try {
     const { amount, description, date, category_id } = req.body;
 
+    console.log('📥 POST /api/expenses - Gelen veri:', { userId: req.userId, amount, description, date, category_id });
+
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
@@ -232,16 +234,19 @@ app.post('/api/expenses', authMiddleware, async (req, res) => {
 
     const newExpense = await addExpense(req.userId, amount, description || '', date, category_id);
 
+    console.log('✅ Harcama eklendi:', newExpense);
+
     res.status(201).json({
       success: true,
       message: 'Harcama başarıyla kaydedildi',
       data: newExpense
     });
   } catch (error) {
-    console.error('Harcama ekleme hatası:', error);
+    console.error('❌ Harcama ekleme hatası:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({
       success: false,
-      error: 'Harcama kaydedilirken bir hata oluştu'
+      error: 'Harcama kaydedilirken bir hata oluştu: ' + error.message
     });
   }
 });
