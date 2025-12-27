@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -20,19 +20,22 @@ export const AuthProvider = ({ children }) => {
     // Token varsa kullanıcı bilgisini al
     useEffect(() => {
         const initAuth = async () => {
-            if (token) {
+            const storedToken = localStorage.getItem('token');
+
+            if (storedToken) {
                 try {
                     const response = await fetch(`${API_URL}/auth/me`, {
                         headers: {
-                            'Authorization': `Bearer ${token}`
+                            'Authorization': `Bearer ${storedToken}`
                         }
                     });
                     const data = await response.json();
 
                     if (data.success) {
                         setUser(data.data);
+                        setToken(storedToken);
                     } else {
-                        // Token geçersiz, temizle
+                        console.error('Token doğrulama başarısız:', data.error);
                         logout();
                     }
                 } catch (error) {
@@ -44,74 +47,104 @@ export const AuthProvider = ({ children }) => {
         };
 
         initAuth();
-    }, [token]);
+    }, []);
 
     // Kayıt ol
     const register = async (username, email, password) => {
-        const response = await fetch(`${API_URL}/auth/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, email, password })
-        });
+        try {
+            const response = await fetch(`${API_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, password })
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (data.success) {
-            localStorage.setItem('token', data.data.token);
-            setToken(data.data.token);
-            setUser(data.data.user);
-            return { success: true };
-        } else {
-            return { success: false, error: data.error };
+            if (data.success) {
+                localStorage.setItem('token', data.data.token);
+                setToken(data.data.token);
+                setUser(data.data.user);
+                return { success: true };
+            } else {
+                return { success: false, error: data.error };
+            }
+        } catch (error) {
+            console.error('Register error:', error);
+            return { success: false, error: 'Sunucuya bağlanılamadı' };
         }
     };
 
     // Giriş yap
     const login = async (email, password) => {
-        const response = await fetch(`${API_URL}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
+        try {
+            const response = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (data.success) {
-            localStorage.setItem('token', data.data.token);
-            setToken(data.data.token);
-            setUser(data.data.user);
-            return { success: true };
-        } else {
-            return { success: false, error: data.error };
+            if (data.success) {
+                localStorage.setItem('token', data.data.token);
+                setToken(data.data.token);
+                setUser(data.data.user);
+                return { success: true };
+            } else {
+                return { success: false, error: data.error };
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            return { success: false, error: 'Sunucuya bağlanılamadı' };
         }
     };
 
     // Çıkış yap
-    const logout = () => {
+    const logout = useCallback(() => {
         localStorage.removeItem('token');
         setToken(null);
         setUser(null);
-    };
+    }, []);
 
-    // API istekleri için auth header
-    const authFetch = async (url, options = {}) => {
+    // API istekleri için auth header - localStorage'dan direkt oku
+    const authFetch = useCallback(async (url, options = {}) => {
+        const storedToken = localStorage.getItem('token');
+
+        if (!storedToken) {
+            console.error('authFetch: Token bulunamadı!');
+            throw new Error('Oturum süresi dolmuş');
+        }
+
         const headers = {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${storedToken}`,
             ...options.headers,
         };
 
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
+        console.log(`authFetch: ${options.method || 'GET'} ${url}`);
+
+        const response = await fetch(url, { ...options, headers });
+
+        // 401 hatası varsa oturumu sonlandır
+        if (response.status === 401) {
+            console.error('authFetch: 401 Unauthorized - Oturum sonlandırılıyor');
+            logout();
+            throw new Error('Oturum süresi dolmuş');
         }
 
-        return fetch(url, { ...options, headers });
-    };
+        // Diğer hata durumları için log
+        if (!response.ok) {
+            console.error(`authFetch: HTTP ${response.status} hatası`);
+        }
+
+        return response;
+    }, [logout]);
 
     const value = {
         user,
         token,
         loading,
-        isAuthenticated: !!user,
+        isAuthenticated: !!user && !!token,
         register,
         login,
         logout,
