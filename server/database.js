@@ -117,6 +117,51 @@ const getAllExpenses = () => {
     });
 };
 
+// Filtrelenmiş harcamaları getir (tarih aralığı ve tür filtresi)
+const getFilteredExpenses = (startDate, endDate, type) => {
+    return new Promise((resolve, reject) => {
+        let sql = `
+      SELECT 
+        e.id,
+        e.amount,
+        e.description,
+        e.date,
+        e.category_id,
+        e.created_at,
+        c.name as category_name,
+        c.type as category_type
+      FROM expenses e
+      LEFT JOIN categories c ON e.category_id = c.id
+      WHERE 1=1
+    `;
+        const params = [];
+
+        // Tarih aralığı filtresi
+        if (startDate) {
+            sql += ` AND e.date >= ?`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            sql += ` AND e.date <= ?`;
+            params.push(endDate);
+        }
+
+        // Tür filtresi (Gelir/Gider)
+        if (type && type !== 'all') {
+            sql += ` AND c.type = ?`;
+            params.push(type);
+        }
+
+        sql += ` ORDER BY e.date DESC, e.created_at DESC`;
+
+        db.all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+};
+
+
 // Veritabanı bağlantısını kapat
 const closeDatabase = () => {
     return new Promise((resolve, reject) => {
@@ -144,6 +189,7 @@ module.exports = {
     getAllCategories,
     addExpense,
     getAllExpenses,
+    getFilteredExpenses,
     deleteExpense,
     closeDatabase
 };
