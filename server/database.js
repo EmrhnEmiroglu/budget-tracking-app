@@ -127,11 +127,23 @@ const closeDatabase = () => {
     });
 };
 
+// Harcama sil
+const deleteExpense = (id) => {
+    return new Promise((resolve, reject) => {
+        const sql = `DELETE FROM expenses WHERE id = ?`;
+        db.run(sql, [id], function (err) {
+            if (err) reject(err);
+            else resolve({ deleted: this.changes > 0, id });
+        });
+    });
+};
+
 module.exports = {
     db,
     initializeDatabase,
     getAllCategories,
     addExpense,
     getAllExpenses,
+    deleteExpense,
     closeDatabase
 };

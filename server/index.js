@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { initializeDatabase, getAllCategories, addExpense, getAllExpenses } = require('./database');
+const { initializeDatabase, getAllCategories, addExpense, getAllExpenses, deleteExpense } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -102,6 +102,41 @@ app.post('/api/expenses', async (req, res) => {
   }
 });
 
+// DELETE /api/expenses/:id - Harcama sil
+app.delete('/api/expenses/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Geçerli bir ID gereklidir'
+      });
+    }
+
+    const result = await deleteExpense(parseInt(id));
+
+    if (result.deleted) {
+      res.json({
+        success: true,
+        message: 'Harcama başarıyla silindi',
+        id: result.id
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Harcama bulunamadı'
+      });
+    }
+  } catch (error) {
+    console.error('Harcama silme hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Harcama silinirken bir hata oluştu'
+    });
+  }
+});
+
 // Veritabanını başlat ve sunucuyu çalıştır
 const startServer = async () => {
   try {
@@ -114,6 +149,7 @@ const startServer = async () => {
       console.log('   GET  /api/categories - Kategori listesi');
       console.log('   GET  /api/expenses   - Harcama listesi');
       console.log('   POST /api/expenses   - Yeni harcama ekle');
+      console.log('   DELETE /api/expenses/:id - Harcama sil');
     });
   } catch (error) {
     console.error('❌ Sunucu başlatma hatası:', error);
