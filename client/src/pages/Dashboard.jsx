@@ -68,9 +68,20 @@ function Dashboard() {
             const response = await authFetch(`${API_URL}/expenses?${params}`)
             const data = await response.json()
 
-            if (data.success) setExpenses(data.data)
+            if (data.success) {
+                setExpenses(data.data)
+            } else {
+                console.error('Expenses fetch failed:', data.error)
+                if (response.status === 401) {
+                    logout()
+                    navigate('/login')
+                }
+            }
         } catch (error) {
             console.error('Harcama yükleme hatası:', error)
+            if (error.message === 'Oturum süresi dolmuş') {
+                navigate('/login')
+            }
         } finally {
             setLoading(false)
         }
@@ -107,9 +118,15 @@ function Dashboard() {
                 setFormData({ amount: '', description: '', date: today, category_id: '', transactionType: 'Gider' })
                 setFormErrors({})
                 fetchExpenses()
+            } else {
+                console.error('Expense add failed:', data.error)
+                alert(data.error || 'Harcama eklenemedi')
             }
         } catch (error) {
             console.error('Ekleme hatası:', error)
+            if (error.message === 'Oturum süresi dolmuş') {
+                navigate('/login')
+            }
         } finally {
             setSubmitting(false)
         }
@@ -131,9 +148,17 @@ function Dashboard() {
             const response = await authFetch(`${API_URL}/expenses/${id}`, { method: 'DELETE' })
             const data = await response.json()
 
-            if (data.success) fetchExpenses()
+            if (data.success) {
+                fetchExpenses()
+            } else {
+                console.error('Delete failed:', data.error)
+                alert(data.error || 'Silme işlemi başarısız')
+            }
         } catch (error) {
             console.error('Silme hatası:', error)
+            if (error.message === 'Oturum süresi dolmuş') {
+                navigate('/login')
+            }
         } finally {
             setDeleting(null)
         }
