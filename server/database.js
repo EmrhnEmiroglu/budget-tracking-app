@@ -1,5 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const bcrypt = require('bcryptjs');
 
 // Veritabanı dosya yolu
 const dbPath = path.join(__dirname, 'database.sqlite');
@@ -17,27 +18,43 @@ const db = new sqlite3.Database(dbPath, (err) => {
 const initializeDatabase = () => {
     return new Promise((resolve, reject) => {
         db.serialize(() => {
+            // Users tablosu
+            db.run(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL UNIQUE,
+          email TEXT NOT NULL UNIQUE,
+          password TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `, (err) => {
+                if (err) console.error('Users tablo hatası:', err.message);
+            });
+
             // Categories tablosu
             db.run(`
         CREATE TABLE IF NOT EXISTS categories (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
           type TEXT NOT NULL CHECK(type IN ('Gider', 'Gelir')),
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(name, type)
         )
       `, (err) => {
                 if (err) console.error('Categories tablo hatası:', err.message);
             });
 
-            // Expenses tablosu
+            // Expenses tablosu (user_id ile)
             db.run(`
         CREATE TABLE IF NOT EXISTS expenses (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
           amount REAL NOT NULL,
           description TEXT,
           date DATE NOT NULL,
           category_id INTEGER NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id),
           FOREIGN KEY (category_id) REFERENCES categories(id)
         )
       `, (err) => {
@@ -49,7 +66,11 @@ const initializeDatabase = () => {
                 { name: 'Market', type: 'Gider' },
                 { name: 'Fatura', type: 'Gider' },
                 { name: 'Eğlence', type: 'Gider' },
-                { name: 'Maaş', type: 'Gelir' }
+                { name: 'Ulaşım', type: 'Gider' },
+                { name: 'Sağlık', type: 'Gider' },
+                { name: 'Giyim', type: 'Gider' },
+                { name: 'Maaş', type: 'Gelir' },
+                { name: 'Ek Gelir', type: 'Gelir' }
             ];
 
             const insertSeed = db.prepare(`
@@ -72,7 +93,61 @@ const initializeDatabase = () => {
     });
 };
 
-// Tüm kategorileri getir
+// ==================== USER FUNCTIONS ====================
+
+// Kullanıcı oluştur
+const createUser = async (username, email, password) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            const sql = `INSERT INTO users (username, email, password) VALUES (?, ?, ?)`;
+
+            db.run(sql, [username, email, hashedPassword], function (err) {
+                if (err) {
+                    if (err.message.includes('UNIQUE constraint')) {
+                        reject(new Error('Bu kullanıcı adı veya email zaten kullanılıyor'));
+                    } else {
+                        reject(err);
+                    }
+                } else {
+                    resolve({ id: this.lastID, username, email });
+                }
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+};
+
+// Kullanıcı bul (email ile)
+const findUserByEmail = (email) => {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT * FROM users WHERE email = ?`;
+        db.get(sql, [email], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+};
+
+// Kullanıcı bul (ID ile)
+const findUserById = (id) => {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT id, username, email, created_at FROM users WHERE id = ?`;
+        db.get(sql, [id], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+};
+
+// Şifre doğrula
+const verifyPassword = async (plainPassword, hashedPassword) => {
+    return bcrypt.compare(plainPassword, hashedPassword);
+};
+
+// ==================== CATEGORY FUNCTIONS ====================
+
 const getAllCategories = () => {
     return new Promise((resolve, reject) => {
         db.all('SELECT * FROM categories ORDER BY type, name', [], (err, rows) => {
@@ -82,19 +157,10 @@ const getAllCategories = () => {
     });
 };
 
-// Yeni harcama ekle
-const addExpense = (amount, description, date, category_id) => {
-    return new Promise((resolve, reject) => {
-        const sql = `INSERT INTO expenses (amount, description, date, category_id) VALUES (?, ?, ?, ?)`;
-        db.run(sql, [amount, description, date, category_id], function (err) {
-            if (err) reject(err);
-            else resolve({ id: this.lastID, amount, description, date, category_id });
-        });
-    });
-};
+// ==================== EXPENSE FUNCTIONS ====================
 
-// Tüm harcamaları getir (kategori bilgisiyle birlikte)
-const getAllExpenses = () => {
+// Kullanıcının tüm harcamalarını getir
+const getAllExpenses = (userId) => {
     return new Promise((resolve, reject) => {
         const sql = `
       SELECT 
@@ -108,17 +174,18 @@ const getAllExpenses = () => {
         c.type as category_type
       FROM expenses e
       LEFT JOIN categories c ON e.category_id = c.id
+      WHERE e.user_id = ?
       ORDER BY e.date DESC, e.created_at DESC
     `;
-        db.all(sql, [], (err, rows) => {
+        db.all(sql, [userId], (err, rows) => {
             if (err) reject(err);
             else resolve(rows);
         });
     });
 };
 
-// Filtrelenmiş harcamaları getir (tarih aralığı ve tür filtresi)
-const getFilteredExpenses = (startDate, endDate, type) => {
+// Filtrelenmiş harcamaları getir (user_id + tarih aralığı + tür filtresi)
+const getFilteredExpenses = (userId, startDate, endDate, type) => {
     return new Promise((resolve, reject) => {
         let sql = `
       SELECT 
@@ -132,11 +199,10 @@ const getFilteredExpenses = (startDate, endDate, type) => {
         c.type as category_type
       FROM expenses e
       LEFT JOIN categories c ON e.category_id = c.id
-      WHERE 1=1
+      WHERE e.user_id = ?
     `;
-        const params = [];
+        const params = [userId];
 
-        // Tarih aralığı filtresi
         if (startDate) {
             sql += ` AND e.date >= ?`;
             params.push(startDate);
@@ -145,8 +211,6 @@ const getFilteredExpenses = (startDate, endDate, type) => {
             sql += ` AND e.date <= ?`;
             params.push(endDate);
         }
-
-        // Tür filtresi (Gelir/Gider)
         if (type && type !== 'all') {
             sql += ` AND c.type = ?`;
             params.push(type);
@@ -161,6 +225,27 @@ const getFilteredExpenses = (startDate, endDate, type) => {
     });
 };
 
+// Yeni harcama ekle (user_id ile)
+const addExpense = (userId, amount, description, date, category_id) => {
+    return new Promise((resolve, reject) => {
+        const sql = `INSERT INTO expenses (user_id, amount, description, date, category_id) VALUES (?, ?, ?, ?, ?)`;
+        db.run(sql, [userId, amount, description, date, category_id], function (err) {
+            if (err) reject(err);
+            else resolve({ id: this.lastID, user_id: userId, amount, description, date, category_id });
+        });
+    });
+};
+
+// Harcama sil (user_id kontrolü ile)
+const deleteExpense = (userId, id) => {
+    return new Promise((resolve, reject) => {
+        const sql = `DELETE FROM expenses WHERE id = ? AND user_id = ?`;
+        db.run(sql, [id, userId], function (err) {
+            if (err) reject(err);
+            else resolve({ deleted: this.changes > 0, id });
+        });
+    });
+};
 
 // Veritabanı bağlantısını kapat
 const closeDatabase = () => {
@@ -172,21 +257,17 @@ const closeDatabase = () => {
     });
 };
 
-// Harcama sil
-const deleteExpense = (id) => {
-    return new Promise((resolve, reject) => {
-        const sql = `DELETE FROM expenses WHERE id = ?`;
-        db.run(sql, [id], function (err) {
-            if (err) reject(err);
-            else resolve({ deleted: this.changes > 0, id });
-        });
-    });
-};
-
 module.exports = {
     db,
     initializeDatabase,
+    // User functions
+    createUser,
+    findUserByEmail,
+    findUserById,
+    verifyPassword,
+    // Category functions
     getAllCategories,
+    // Expense functions
     addExpense,
     getAllExpenses,
     getFilteredExpenses,

@@ -1,7 +1,19 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { initializeDatabase, getAllCategories, addExpense, getAllExpenses, getFilteredExpenses, deleteExpense } = require('./database');
+const {
+  initializeDatabase,
+  getAllCategories,
+  addExpense,
+  getAllExpenses,
+  getFilteredExpenses,
+  deleteExpense,
+  createUser,
+  findUserByEmail,
+  findUserById,
+  verifyPassword
+} = require('./database');
+const { generateToken, authMiddleware } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,9 +31,132 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ==================== AUTH API ====================
+
+// POST /api/auth/register - Kayıt ol
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+
+    // Validasyon
+    if (!username || username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Kullanıcı adı en az 3 karakter olmalıdır'
+      });
+    }
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Geçerli bir email adresi giriniz'
+      });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Şifre en az 6 karakter olmalıdır'
+      });
+    }
+
+    const user = await createUser(username, email, password);
+    const token = generateToken(user.id);
+
+    res.status(201).json({
+      success: true,
+      message: 'Kayıt başarılı',
+      data: {
+        user: { id: user.id, username: user.username, email: user.email },
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Kayıt hatası:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Kayıt sırasında bir hata oluştu'
+    });
+  }
+});
+
+// POST /api/auth/login - Giriş yap
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email ve şifre gereklidir'
+      });
+    }
+
+    const user = await findUserByEmail(email);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Email veya şifre hatalı'
+      });
+    }
+
+    const isValidPassword = await verifyPassword(password, user.password);
+
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        error: 'Email veya şifre hatalı'
+      });
+    }
+
+    const token = generateToken(user.id);
+
+    res.json({
+      success: true,
+      message: 'Giriş başarılı',
+      data: {
+        user: { id: user.id, username: user.username, email: user.email },
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Giriş hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Giriş sırasında bir hata oluştu'
+    });
+  }
+});
+
+// GET /api/auth/me - Kullanıcı bilgisi
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await findUserById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'Kullanıcı bulunamadı'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Kullanıcı bilgisi hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Kullanıcı bilgisi alınırken hata oluştu'
+    });
+  }
+});
+
 // ==================== CATEGORIES API ====================
 
-// GET /api/categories - Tüm kategorileri listele
+// GET /api/categories - Tüm kategorileri listele (public)
 app.get('/api/categories', async (req, res) => {
   try {
     const categories = await getAllCategories();
@@ -39,20 +174,19 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-// ==================== EXPENSES API ====================
+// ==================== EXPENSES API (Protected) ====================
 
-// GET /api/expenses - Harcamaları getir (opsiyonel filtrelerle)
-app.get('/api/expenses', async (req, res) => {
+// GET /api/expenses - Kullanıcının harcamalarını getir
+app.get('/api/expenses', authMiddleware, async (req, res) => {
   try {
     const { startDate, endDate, type } = req.query;
 
     let expenses;
 
-    // Eğer filtre parametreleri varsa filtrelenmiş sonuç getir
     if (startDate || endDate || (type && type !== 'all')) {
-      expenses = await getFilteredExpenses(startDate, endDate, type);
+      expenses = await getFilteredExpenses(req.userId, startDate, endDate, type);
     } else {
-      expenses = await getAllExpenses();
+      expenses = await getAllExpenses(req.userId);
     }
 
     res.json({
@@ -70,12 +204,11 @@ app.get('/api/expenses', async (req, res) => {
   }
 });
 
-// POST /api/expenses - Yeni bir harcama kaydet
-app.post('/api/expenses', async (req, res) => {
+// POST /api/expenses - Yeni harcama kaydet
+app.post('/api/expenses', authMiddleware, async (req, res) => {
   try {
     const { amount, description, date, category_id } = req.body;
 
-    // Validasyon
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
@@ -97,7 +230,7 @@ app.post('/api/expenses', async (req, res) => {
       });
     }
 
-    const newExpense = await addExpense(amount, description || '', date, category_id);
+    const newExpense = await addExpense(req.userId, amount, description || '', date, category_id);
 
     res.status(201).json({
       success: true,
@@ -114,7 +247,7 @@ app.post('/api/expenses', async (req, res) => {
 });
 
 // DELETE /api/expenses/:id - Harcama sil
-app.delete('/api/expenses/:id', async (req, res) => {
+app.delete('/api/expenses/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -125,7 +258,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
       });
     }
 
-    const result = await deleteExpense(parseInt(id));
+    const result = await deleteExpense(req.userId, parseInt(id));
 
     if (result.deleted) {
       res.json({
@@ -136,7 +269,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
     } else {
       res.status(404).json({
         success: false,
-        error: 'Harcama bulunamadı'
+        error: 'Harcama bulunamadı veya yetkiniz yok'
       });
     }
   } catch (error) {
@@ -155,12 +288,14 @@ const startServer = async () => {
 
     app.listen(PORT, () => {
       console.log(`🚀 Sunucu http://localhost:${PORT} adresinde çalışıyor`);
-      console.log('📍 Mevcut API Endpoints:');
-      console.log('   GET  /api/health     - Sunucu durumu');
-      console.log('   GET  /api/categories - Kategori listesi');
-      console.log('   GET  /api/expenses   - Harcama listesi (query: startDate, endDate, type)');
-      console.log('   POST /api/expenses   - Yeni harcama ekle');
-      console.log('   DELETE /api/expenses/:id - Harcama sil');
+      console.log('📍 API Endpoints:');
+      console.log('   POST /api/auth/register - Kayıt');
+      console.log('   POST /api/auth/login    - Giriş');
+      console.log('   GET  /api/auth/me       - Kullanıcı bilgisi (Auth)');
+      console.log('   GET  /api/categories    - Kategoriler');
+      console.log('   GET  /api/expenses      - Harcamalar (Auth)');
+      console.log('   POST /api/expenses      - Harcama ekle (Auth)');
+      console.log('   DELETE /api/expenses/:id - Harcama sil (Auth)');
     });
   } catch (error) {
     console.error('❌ Sunucu başlatma hatası:', error);
