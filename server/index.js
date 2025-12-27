@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { initializeDatabase, getAllCategories, addExpense, getAllExpenses, deleteExpense } = require('./database');
+const { initializeDatabase, getAllCategories, addExpense, getAllExpenses, getFilteredExpenses, deleteExpense } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,14 +41,25 @@ app.get('/api/categories', async (req, res) => {
 
 // ==================== EXPENSES API ====================
 
-// GET /api/expenses - Tüm harcamaları tarih sırasına göre getir
+// GET /api/expenses - Harcamaları getir (opsiyonel filtrelerle)
 app.get('/api/expenses', async (req, res) => {
   try {
-    const expenses = await getAllExpenses();
+    const { startDate, endDate, type } = req.query;
+
+    let expenses;
+
+    // Eğer filtre parametreleri varsa filtrelenmiş sonuç getir
+    if (startDate || endDate || (type && type !== 'all')) {
+      expenses = await getFilteredExpenses(startDate, endDate, type);
+    } else {
+      expenses = await getAllExpenses();
+    }
+
     res.json({
       success: true,
       data: expenses,
-      count: expenses.length
+      count: expenses.length,
+      filters: { startDate, endDate, type }
     });
   } catch (error) {
     console.error('Harcama listeleme hatası:', error);
@@ -147,7 +158,7 @@ const startServer = async () => {
       console.log('📍 Mevcut API Endpoints:');
       console.log('   GET  /api/health     - Sunucu durumu');
       console.log('   GET  /api/categories - Kategori listesi');
-      console.log('   GET  /api/expenses   - Harcama listesi');
+      console.log('   GET  /api/expenses   - Harcama listesi (query: startDate, endDate, type)');
       console.log('   POST /api/expenses   - Yeni harcama ekle');
       console.log('   DELETE /api/expenses/:id - Harcama sil');
     });
