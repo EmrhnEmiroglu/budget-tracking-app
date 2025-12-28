@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useOutletContext } from 'react-router-dom'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { Wallet, TrendingUp, TrendingDown, CreditCard, AlertTriangle, CheckCircle } from 'lucide-react'
 
 const API_URL = 'http://localhost:5000/api'
-const COLORS = ['#C4B5FD', '#FBCFE8', '#FDE68A', '#A7F3D0', '#BAE6FD', '#FECACA', '#DDD6FE', '#99F6E4']
+const COLORS = ['#818cf8', '#f472b6', '#fbbf24', '#34d399', '#60a5fa', '#f87171', '#a78bfa', '#2dd4bf']
 
 export default function Dashboard() {
     const { authFetch } = useAuth()
@@ -27,9 +28,7 @@ export default function Dashboard() {
             const response = await authFetch(`${API_URL}/summary`)
             const data = await response.json()
             if (data.success) setSummary(data.data)
-        } catch (error) {
-            console.error(error)
-        }
+        } catch (error) { console.error(error) }
     }
 
     const fetchCategories = async () => {
@@ -68,14 +67,12 @@ export default function Dashboard() {
         .filter(i => i.value > 0)
 
     const barChartData = [
-        { name: 'Gelir', value: summary.total_income, fill: '#34D399' },
-        { name: 'Gider', value: summary.total_expense, fill: '#F87171' }
+        { name: 'Gelir', value: summary.total_income, fill: '#34d399' },
+        { name: 'Gider', value: summary.total_expense, fill: '#f87171' }
     ]
 
-    // Budget status - sadece limit belirlenmis kategoriler
     const activeBudgets = budgetStatus.filter(b => b.budget_limit > 0)
 
-    // Progress bar renk belirleme
     const getProgressColor = (percentage) => {
         if (percentage >= 100) return 'bg-rose-500'
         if (percentage >= 80) return 'bg-amber-500'
@@ -83,114 +80,184 @@ export default function Dashboard() {
     }
 
     const getProgressBg = (percentage) => {
-        if (percentage >= 100) return 'bg-rose-500/20'
-        if (percentage >= 80) return 'bg-amber-500/20'
-        return 'bg-emerald-500/20'
+        if (percentage >= 100) return 'bg-rose-500/10'
+        if (percentage >= 80) return 'bg-amber-500/10'
+        return 'bg-emerald-500/10'
     }
+
+    // Common card styles
+    const cardClass = `p-6 rounded-3xl border transition-all duration-300 ${darkMode ? 'bg-[#161616] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`
+    const iconBoxClass = (color) => `w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${color}`
 
     return (
         <div className="space-y-6">
-            <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>📊 Bu Ayın Özeti</h1>
+            <h1 className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Bu Ay</h1>
 
-            {/* Cards */}
+            {/* Bento Grid Layout */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="rounded-2xl p-6 bg-gradient-to-br from-emerald-500 to-teal-600 shadow-xl shadow-emerald-500/10 text-white relative overflow-hidden group">
-                    <div className="text-emerald-100 text-sm font-medium mb-1 relative z-10">Toplam Gelir</div>
-                    <div className="text-3xl font-bold relative z-10">{formatMoney(summary.total_income)}</div>
-                    <div className="absolute -right-4 -bottom-4 text-emerald-400/20 text-8xl group-hover:scale-110 transition-transform">💵</div>
-                </div>
 
-                <div className="rounded-2xl p-6 bg-gradient-to-br from-rose-500 to-red-600 shadow-xl shadow-rose-500/10 text-white relative overflow-hidden group">
-                    <div className="text-rose-100 text-sm font-medium mb-1 relative z-10">Toplam Gider</div>
-                    <div className="text-3xl font-bold relative z-10">{formatMoney(summary.total_expense)}</div>
-                    <div className="absolute -right-4 -bottom-4 text-rose-400/20 text-8xl group-hover:scale-110 transition-transform">💸</div>
-                </div>
-
-                <div className={`rounded-2xl p-6 shadow-xl text-white relative overflow-hidden group ${summary.balance >= 0 ? 'bg-gradient-to-br from-blue-500 to-indigo-600 shadow-blue-500/10' : 'bg-gradient-to-br from-orange-500 to-red-600 shadow-orange-500/10'}`}>
-                    <div className="text-white/80 text-sm font-medium mb-1 relative z-10">Net Bakiye</div>
-                    <div className="text-3xl font-bold relative z-10">{formatMoney(summary.balance)}</div>
-                    <div className="absolute -right-4 -bottom-4 text-white/10 text-8xl group-hover:scale-110 transition-transform">⚖️</div>
-                </div>
-            </div>
-
-            {/* Budget Status */}
-            {activeBudgets.length > 0 && (
-                <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`}>
-                    <h2 className={`text-lg font-bold mb-4 ${darkMode ? 'text-white' : 'text-slate-900'}`}>💰 Bütçe Durumu</h2>
-                    <div className="space-y-4">
-                        {activeBudgets.map(budget => (
-                            <div key={budget.id} className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <span className={`font-medium ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                                        {budget.name}
-                                        {budget.percentage >= 100 && <span className="ml-2">🔴</span>}
-                                        {budget.percentage >= 80 && budget.percentage < 100 && <span className="ml-2">⚠️</span>}
-                                    </span>
-                                    <span className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                                        {formatMoney(budget.spent)} / {formatMoney(budget.budget_limit)}
-                                    </span>
-                                </div>
-                                <div className={`h-3 rounded-full overflow-hidden ${getProgressBg(budget.percentage)}`}>
-                                    <div
-                                        className={`h-full rounded-full transition-all duration-500 ${getProgressColor(budget.percentage)}`}
-                                        style={{ width: `${Math.min(budget.percentage, 100)}%` }}
-                                    />
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className={`font-bold ${budget.percentage >= 100 ? 'text-rose-500' :
-                                            budget.percentage >= 80 ? 'text-amber-500' :
-                                                'text-emerald-500'
-                                        }`}>
-                                        %{budget.percentage}
-                                    </span>
-                                    {budget.percentage >= 100 && (
-                                        <span className="text-rose-500 font-medium">
-                                            Limit aşıldı! (+{formatMoney(budget.spent - budget.budget_limit)})
-                                        </span>
-                                    )}
-                                    {budget.percentage >= 80 && budget.percentage < 100 && (
-                                        <span className="text-amber-500 font-medium">
-                                            Limite yaklaşıyor
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
+                {/* Summary Cards */}
+                <div className={`${cardClass} group hover:border-indigo-500/20`}>
+                    <div className={iconBoxClass(darkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600')}>
+                        <TrendingUp size={24} />
+                    </div>
+                    <div className={`text-sm font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Toplam Gelir</div>
+                    <div className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {formatMoney(summary.total_income)}
                     </div>
                 </div>
-            )}
 
-            {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`}>
-                    <h2 className={`text-lg font-bold mb-6 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Gider Dağılımı</h2>
+                <div className={`${cardClass} group hover:border-rose-500/20`}>
+                    <div className={iconBoxClass(darkMode ? 'bg-rose-500/10 text-rose-400' : 'bg-rose-50 text-rose-600')}>
+                        <TrendingDown size={24} />
+                    </div>
+                    <div className={`text-sm font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Toplam Gider</div>
+                    <div className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {formatMoney(summary.total_expense)}
+                    </div>
+                </div>
+
+                <div className={`${cardClass} group hover:border-emerald-500/20`}>
+                    <div className={iconBoxClass(darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600')}>
+                        <Wallet size={24} />
+                    </div>
+                    <div className={`text-sm font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Net Bakiye</div>
+                    <div className={`text-3xl font-bold tracking-tight ${summary.balance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {formatMoney(summary.balance)}
+                    </div>
+                </div>
+
+                {/* Charts Area - Bento Grid Span */}
+                <div className={`${cardClass} md:col-span-2 min-h-[400px]`}>
+                    <div className="flex items-center justify-between mb-8">
+                        <div>
+                            <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Harcama Analizi</h2>
+                            <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Kategorilere göre gider dağılımı</p>
+                        </div>
+                        <div className={`p-2 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
+                            <CreditCard size={20} className={darkMode ? 'text-zinc-400' : 'text-slate-500'} />
+                        </div>
+                    </div>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie data={pieChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={4} dataKey="value">
-                                    {pieChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke={darkMode ? '#0f172a' : '#fff'} strokeWidth={3} />)}
+                                <Pie
+                                    data={pieChartData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={80}
+                                    outerRadius={100}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                    cornerRadius={6}
+                                >
+                                    {pieChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
                                 </Pie>
-                                <Tooltip formatter={(v) => formatMoney(v)} contentStyle={{ backgroundColor: darkMode ? '#1e293b' : '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                <Legend />
+                                <Tooltip
+                                    formatter={(v) => formatMoney(v)}
+                                    contentStyle={{
+                                        backgroundColor: darkMode ? '#18181b' : '#fff',
+                                        borderRadius: '16px',
+                                        border: darkMode ? '1px solid #27272a' : '1px solid #e4e4e7',
+                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                                    }}
+                                    itemStyle={{ color: darkMode ? '#fff' : '#000' }}
+                                />
+                                <Legend iconType="circle" />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                <div className={`p-6 rounded-2xl border ${darkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}`}>
-                    <h2 className={`text-lg font-bold mb-6 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Gelir vs Gider</h2>
+                <div className={`${cardClass} min-h-[400px]`}>
+                    <div className="flex items-center justify-between mb-8">
+                        <div>
+                            <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Gelir / Gider</h2>
+                            <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Finansal denge özeti</p>
+                        </div>
+                    </div>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={barChartData} barSize={60}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#334155' : '#e2e8f0'} />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} stroke={darkMode ? '#94a3b8' : '#64748b'} />
-                                <YAxis axisLine={false} tickLine={false} stroke={darkMode ? '#94a3b8' : '#64748b'} tickFormatter={(v) => `₺${v / 1000}k`} />
-                                <Tooltip formatter={(v) => formatMoney(v)} cursor={{ fill: darkMode ? '#1e293b' : '#f1f5f9' }} contentStyle={{ backgroundColor: darkMode ? '#1e293b' : '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                            <BarChart data={barChartData} barSize={40}>
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    stroke={darkMode ? '#52525b' : '#94a3b8'}
+                                    dy={10}
+                                />
+                                <Tooltip
+                                    cursor={{ fill: darkMode ? '#27272a' : '#f4f4f5', radius: 8 }}
+                                    formatter={(v) => formatMoney(v)}
+                                    contentStyle={{
+                                        backgroundColor: darkMode ? '#18181b' : '#fff',
+                                        borderRadius: '16px',
+                                        border: darkMode ? '1px solid #27272a' : '1px solid #e4e4e7',
+                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                                    }}
+                                    itemStyle={{ color: darkMode ? '#fff' : '#000' }}
+                                />
+                                <Bar dataKey="value" radius={[8, 8, 8, 8]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
+
+                {/* Budget Status - Full Width */}
+                {activeBudgets.length > 0 && (
+                    <div className={`${cardClass} md:col-span-3`}>
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className={`p-2 rounded-xl ${darkMode ? 'bg-amber-500/10 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
+                                <AlertTriangle size={20} />
+                            </div>
+                            <div>
+                                <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Bütçe Hedefleri</h2>
+                                <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Aylık harcama limitleri</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {activeBudgets.map(budget => (
+                                <div key={budget.id} className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-slate-50 border-slate-100'}`}>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                                            {budget.name}
+                                        </span>
+                                        <span className={`text-xs font-mono px-2 py-1 rounded-lg ${darkMode ? 'bg-white/5 text-zinc-400' : 'bg-white border text-slate-500'}`}>
+                                            {formatMoney(budget.spent)} / {formatMoney(budget.budget_limit)}
+                                        </span>
+                                    </div>
+
+                                    <div className="relative h-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
+                                        <div
+                                            className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${getProgressColor(budget.percentage)}`}
+                                            style={{ width: `${Math.min(budget.percentage, 100)}%` }}
+                                        />
+                                    </div>
+
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className={`font-bold ${budget.percentage >= 100 ? 'text-rose-500' :
+                                            budget.percentage >= 80 ? 'text-amber-500' :
+                                                'text-emerald-500'
+                                            }`}>
+                                            %{budget.percentage} Kullanıldı
+                                        </span>
+
+                                        {budget.percentage >= 100 ? (
+                                            <span className="flex items-center gap-1 text-rose-500 font-medium">
+                                                <AlertTriangle size={12} /> Limit Aşıldı
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 text-emerald-500 font-medium">
+                                                <CheckCircle size={12} /> İyi Durumda
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     )
