@@ -15,12 +15,17 @@ export default function Dashboard() {
     const [expenses, setExpenses] = useState([])
     const [categories, setCategories] = useState([])
     const [budgetStatus, setBudgetStatus] = useState([])
+    const [approachingPayments, setApproachingPayments] = useState([])
+    const [pendingSubscriptions, setPendingSubscriptions] = useState([])
+    const [pieChartData, setPieChartData] = useState([])
 
     useEffect(() => {
         fetchSummary()
         fetchChartData()
         fetchCategories()
         fetchBudgetStatus()
+        fetchApproachingPayments()
+        fetchExpenseAnalysis()
     }, [])
 
     const fetchSummary = async () => {
@@ -59,12 +64,40 @@ export default function Dashboard() {
         } catch (error) { console.error(error) }
     }
 
+    const fetchApproachingPayments = async () => {
+        try {
+            const response = await authFetch(`${API_URL}/subscriptions/pending`)
+            const data = await response.json()
+            if (data.success) {
+                // Tüm bekleyen ödemeleri grafikleriçin sakla
+                setPendingSubscriptions(data.data)
+
+                // Sadece 5 gün içinde ödenecekleri filtrele (Kart için)
+                const upcoming = data.data.filter(sub => {
+                    const today = new Date().getDate()
+                    const daysLeft = sub.billing_day - today
+                    return daysLeft >= 0 && daysLeft <= 5
+                })
+                setApproachingPayments(upcoming)
+            }
+        } catch (error) { console.error(error) }
+    }
+
+    const fetchExpenseAnalysis = async () => {
+        try {
+            const response = await authFetch(`${API_URL}/expense-analysis`)
+            const data = await response.json()
+            if (data.success) {
+                // Filter out zero values and format for chart
+                setPieChartData(data.data.filter(item => item.value > 0))
+            }
+        } catch (error) { console.error(error) }
+    }
+
     const formatMoney = (a) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(a)
 
-    // Chart Prep
-    const pieChartData = categories.filter(c => c.type === 'Gider')
-        .map(c => ({ name: c.name, value: expenses.filter(e => e.category_id === c.id).reduce((s, e) => s + e.amount, 0) }))
-        .filter(i => i.value > 0)
+    // Chart Prep    
+    // pieChartData is now fetched from API
 
     const barChartData = [
         { name: 'Gelir', value: summary.total_income, fill: '#34d399' },
@@ -138,6 +171,7 @@ export default function Dashboard() {
                             <CreditCard size={20} className={darkMode ? 'text-zinc-400' : 'text-slate-500'} />
                         </div>
                     </div>
+
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
@@ -168,6 +202,45 @@ export default function Dashboard() {
                         </ResponsiveContainer>
                     </div>
                 </div>
+
+                {/* Upcoming Payments - Bento Grid Span */}
+                {approachingPayments.length > 0 && (
+                    <div className={`${cardClass} md:col-span-1`}>
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Yaklaşan Ödemeler</h2>
+                                <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>5 gün içinde ödenecekler</p>
+                            </div>
+                            <div className={`p-2 rounded-xl ${darkMode ? 'bg-amber-500/10 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
+                                <AlertTriangle size={20} />
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            {approachingPayments.map(sub => {
+                                const today = new Date().getDate()
+                                const daysLeft = sub.billing_day - today
+                                return (
+                                    <div key={sub.id} className={`flex items-center justify-between p-4 rounded-2xl border ${darkMode ? 'bg-zinc-800/50 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-xl ${darkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                                                <CreditCard size={18} />
+                                            </div>
+                                            <div>
+                                                <div className={`font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>{sub.name}</div>
+                                                <div className={`text-xs font-medium ${darkMode ? 'text-amber-500' : 'text-amber-600'}`}>
+                                                    {daysLeft === 0 ? 'Bugün ödeniyor' : `${daysLeft} gün kaldı`}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className={`font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                                            {formatMoney(sub.amount)}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 <div className={`${cardClass} min-h-[400px]`}>
                     <div className="flex items-center justify-between mb-8">
@@ -240,7 +313,7 @@ export default function Dashboard() {
                                             budget.percentage >= 80 ? 'text-amber-500' :
                                                 'text-emerald-500'
                                             }`}>
-                                            %{budget.percentage} Kullanıldı
+                                            {budget.percentage}% Kullanıldı
                                         </span>
 
                                         {budget.percentage >= 100 ? (
@@ -258,7 +331,7 @@ export default function Dashboard() {
                         </div>
                     </div>
                 )}
-            </div>
-        </div>
+            </div >
+        </div >
     )
 }

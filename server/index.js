@@ -19,9 +19,17 @@ const {
   getAllNotes,
   addNote,
   updateNote,
-  deleteNote
+  deleteNote,
+  getAllSubscriptions,
+  addSubscription,
+  updateSubscription,
+  deleteSubscription,
+  getPendingPayments,
+  getExpenseAnalysis
 } = require('./database');
-const { generateToken, authMiddleware } = require('./auth');
+const { generateToken, authMiddleware, adminMiddleware } = require('./auth');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,6 +44,97 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     message: 'Sunucu çalışıyor!',
     timestamp: new Date().toISOString()
+  });
+});
+
+// ==================== SUBSCRIPTION CATALOG ====================
+const DEFAULT_CATALOG = require('./subscriptionCatalog');
+const CATALOG_FILE = path.join(__dirname, 'subscriptionCatalog.json');
+
+// Kataloğu dosyadan oku (yoksa varsayılanı kullan)
+const loadCatalog = () => {
+  try {
+    if (fs.existsSync(CATALOG_FILE)) {
+      const data = fs.readFileSync(CATALOG_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Katalog dosyası okunamadı:', error.message);
+  }
+  return DEFAULT_CATALOG;
+};
+
+// Kataloğu dosyaya yaz
+const saveCatalog = (catalog) => {
+  try {
+    fs.writeFileSync(CATALOG_FILE, JSON.stringify(catalog, null, 2), 'utf-8');
+    return true;
+  } catch (error) {
+    console.error('Katalog dosyası yazılamadı:', error.message);
+    return false;
+  }
+};
+
+// Mevcut katalog (bellekte)
+let SUBSCRIPTION_CATALOG = loadCatalog();
+
+// GET /api/subscription-catalog - Abonelik kataloğunu getir
+app.get('/api/subscription-catalog', (req, res) => {
+  res.json({
+    success: true,
+    data: SUBSCRIPTION_CATALOG
+  });
+});
+
+// POST /api/admin/update-catalog - Kataloğu güncelle (Sadece Admin)
+app.post('/api/admin/update-catalog', authMiddleware, adminMiddleware, (req, res) => {
+  try {
+    const { catalog } = req.body;
+
+    if (!catalog || typeof catalog !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'Geçerli bir katalog verisi gereklidir'
+      });
+    }
+
+    // Kataloğu dosyaya kaydet
+    if (saveCatalog(catalog)) {
+      // Bellek içindeki kataloğu da güncelle
+      SUBSCRIPTION_CATALOG = catalog;
+
+      res.json({
+        success: true,
+        message: 'Katalog başarıyla güncellendi',
+        data: SUBSCRIPTION_CATALOG
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Katalog dosyası kaydedilemedi'
+      });
+    }
+  } catch (error) {
+    console.error('Katalog güncelleme hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Katalog güncellenirken bir hata oluştu'
+    });
+  }
+});
+
+// Root Endpoint - API Durum Kontrolü
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Gelir Gider Takip API Çalışıyor 🚀',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      expenses: '/api/expenses',
+      categories: '/api/categories',
+      subscriptions: '/api/subscriptions'
+    }
   });
 });
 
@@ -179,6 +278,23 @@ app.get('/api/summary', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Özet bilgisi alınırken bir hata oluştu'
+    });
+  }
+});
+
+// GET /api/expense-analysis - Pasta grafiği için kategori + abonelik verisi
+app.get('/api/expense-analysis', authMiddleware, async (req, res) => {
+  try {
+    const analysis = await getExpenseAnalysis(req.userId);
+    res.json({
+      success: true,
+      data: analysis
+    });
+  } catch (error) {
+    console.error('Harcama analizi hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Harcama analizi alınırken bir hata oluştu'
     });
   }
 });
@@ -478,6 +594,131 @@ app.delete('/api/notes/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Not silme hatası:', error);
     res.status(500).json({ success: false, error: 'Not silinirken bir hata oluştu' });
+  }
+});
+
+// ==================== SUBSCRIPTIONS API (Protected) ====================
+
+// GET /api/subscriptions - Kullanıcının aboneliklerini getir
+app.get('/api/subscriptions', authMiddleware, async (req, res) => {
+  try {
+    const subscriptions = await getAllSubscriptions(req.userId);
+    res.json({
+      success: true,
+      data: subscriptions,
+      count: subscriptions.length
+    });
+  } catch (error) {
+    console.error('Abonelik listeleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Abonelikler alınırken bir hata oluştu' });
+  }
+});
+
+// GET /api/subscriptions/pending - Bekleyen ödemeleri getir
+app.get('/api/subscriptions/pending', authMiddleware, async (req, res) => {
+  try {
+    const pendingPayments = await getPendingPayments(req.userId);
+    res.json({
+      success: true,
+      data: pendingPayments,
+      count: pendingPayments.length
+    });
+  } catch (error) {
+    console.error('Bekleyen ödemeler hatası:', error);
+    res.status(500).json({ success: false, error: 'Bekleyen ödemeler alınırken bir hata oluştu' });
+  }
+});
+
+// POST /api/subscriptions - Yeni abonelik ekle
+app.post('/api/subscriptions', authMiddleware, async (req, res) => {
+  try {
+    const { name, amount, billing_day, category_id } = req.body;
+
+    if (!name || name.trim().length < 1) {
+      return res.status(400).json({ success: false, error: 'Abonelik adı gerekli' });
+    }
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, error: 'Geçerli bir tutar giriniz' });
+    }
+    if (!billing_day || billing_day < 1 || billing_day > 31) {
+      return res.status(400).json({ success: false, error: 'Ödeme günü 1-31 arasında olmalıdır' });
+    }
+
+    const subscription = await addSubscription(
+      req.userId,
+      name.trim(),
+      parseFloat(amount),
+      parseInt(billing_day),
+      category_id ? parseInt(category_id) : null
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Abonelik eklendi',
+      data: subscription
+    });
+  } catch (error) {
+    console.error('Abonelik ekleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Abonelik eklenirken bir hata oluştu' });
+  }
+});
+
+// PUT /api/subscriptions/:id - Abonelik güncelle
+app.put('/api/subscriptions/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, name, billing_day, category_id } = req.body;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ success: false, error: 'Geçerli bir ID gereklidir' });
+    }
+
+    // En az bir alan güncellenecek mi kontrol et
+    if (amount === undefined && name === undefined && billing_day === undefined && category_id === undefined) {
+      return res.status(400).json({ success: false, error: 'Güncellenecek en az bir alan belirtmelisiniz' });
+    }
+
+    // Sayısal validasyon
+    if (amount !== undefined && (typeof amount !== 'number' || isNaN(amount) || amount <= 0)) {
+      return res.status(400).json({ success: false, error: 'Tutar pozitif bir sayı olmalıdır' });
+    }
+
+    const updateData = {};
+    if (amount !== undefined) updateData.amount = parseFloat(amount);
+    if (name !== undefined) updateData.name = name.trim();
+    if (billing_day !== undefined) updateData.billingDay = parseInt(billing_day);
+    if (category_id !== undefined) updateData.categoryId = parseInt(category_id);
+
+    const result = await updateSubscription(req.userId, parseInt(id), updateData);
+
+    res.json({
+      success: true,
+      message: 'Abonelik güncellendi',
+      data: result
+    });
+  } catch (error) {
+    console.error('Abonelik güncelleme hatası:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Abonelik güncellenirken bir hata oluştu'
+    });
+  }
+});
+
+// DELETE /api/subscriptions/:id - Aboneliği iptal et
+app.delete('/api/subscriptions/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await deleteSubscription(req.userId, parseInt(id));
+
+    if (result.deleted) {
+      res.json({ success: true, message: 'Abonelik iptal edildi' });
+    } else {
+      res.status(404).json({ success: false, error: 'Abonelik bulunamadı' });
+    }
+  } catch (error) {
+    console.error('Abonelik silme hatası:', error);
+    res.status(500).json({ success: false, error: 'Abonelik silinirken bir hata oluştu' });
   }
 });
 

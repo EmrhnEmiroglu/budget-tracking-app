@@ -7,7 +7,9 @@ import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import AddTransaction from './pages/AddTransaction'
 import Notes from './pages/Notes'
+import Subscriptions from './pages/Subscriptions'
 import Settings from './pages/Settings'
+import CatalogManagement from './pages/CatalogManagement'
 
 // Protected Route component
 function ProtectedRoute({ children }) {
@@ -71,7 +73,9 @@ function App() {
         <Route path="transactions" element={<Transactions />} />
         <Route path="add" element={<AddTransaction />} />
         <Route path="notes" element={<Notes />} />
+        <Route path="subscriptions" element={<Subscriptions />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="admin/catalog" element={<CatalogManagement />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

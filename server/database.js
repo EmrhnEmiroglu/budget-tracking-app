@@ -25,10 +25,15 @@ const initializeDatabase = () => {
           username TEXT NOT NULL UNIQUE,
           email TEXT NOT NULL UNIQUE,
           password TEXT NOT NULL,
+          is_admin INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
                 if (err) console.error('Users tablo hatası:', err.message);
+                else {
+                    // Migration: is_admin sütunu ekle (mevcut kullanıcılar için)
+                    db.run("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0", () => { });
+                }
             });
 
             // Categories tablosu
@@ -84,6 +89,28 @@ const initializeDatabase = () => {
                 else {
                     // Migration: due_date sütunu ekle
                     db.run("ALTER TABLE notes ADD COLUMN due_date DATETIME", () => { });
+                }
+            });
+
+            // Subscriptions tablosu
+            db.run(`
+        CREATE TABLE IF NOT EXISTS subscriptions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          billing_day INTEGER NOT NULL CHECK(billing_day >= 1 AND billing_day <= 31),
+          category_id INTEGER,
+          is_active INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (category_id) REFERENCES categories(id)
+        )
+      `, (err) => {
+                if (err) console.error('Subscriptions tablo hatası:', err.message);
+                else {
+                    // Migration: logo_url sütunu ekle
+                    db.run("ALTER TABLE subscriptions ADD COLUMN logo_url TEXT", () => { });
                 }
             });
 
@@ -159,7 +186,7 @@ const findUserByEmail = (email) => {
 // Kullanıcı bul (ID ile)
 const findUserById = (id) => {
     return new Promise((resolve, reject) => {
-        const sql = `SELECT id, username, email, created_at FROM users WHERE id = ?`;
+        const sql = `SELECT id, username, email, is_admin, created_at FROM users WHERE id = ?`;
         db.get(sql, [id], (err, row) => {
             if (err) reject(err);
             else resolve(row);
@@ -200,7 +227,7 @@ const getMonthlySummary = (userId) => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-        const sql = `
+        const summarySql = `
             SELECT 
                 SUM(CASE WHEN c.type = 'Gelir' THEN e.amount ELSE 0 END) as total_income,
                 SUM(CASE WHEN c.type = 'Gider' THEN e.amount ELSE 0 END) as total_expense
@@ -209,12 +236,42 @@ const getMonthlySummary = (userId) => {
             WHERE e.user_id = ? AND e.date BETWEEN ? AND ?
         `;
 
-        db.get(sql, [userId, startOfMonth, endOfMonth], (err, row) => {
-            if (err) reject(err);
-            else resolve({
-                total_income: row?.total_income || 0,
-                total_expense: row?.total_expense || 0,
-                balance: (row?.total_income || 0) - (row?.total_expense || 0)
+        db.get(summarySql, [userId, startOfMonth, endOfMonth], (err, summaryRow) => {
+            if (err) return reject(err);
+
+            // Aktif abonelikleri ve bu ayki harcamaları getir (Mükerrer eklemeyi önlemek için)
+            const subSql = `SELECT name, amount FROM subscriptions WHERE user_id = ? AND is_active = 1`;
+            const expSql = `SELECT description FROM expenses WHERE user_id = ? AND date BETWEEN ? AND ?`;
+
+            db.all(subSql, [userId], (err, subscriptions) => {
+                if (err) return reject(err);
+
+                db.all(expSql, [userId, startOfMonth, endOfMonth], (err, expenses) => {
+                    if (err) return reject(err);
+
+                    // Harcama açıklamalarını küçük harfe çevirip bir diziye al
+                    const paidDescriptions = expenses.map(e => e.description ? e.description.toLowerCase() : '');
+
+                    // Henüz ödenmemiş (harcamalara eklenmemiş) abonelikleri topla
+                    let unpaidSubscriptionsTotal = 0;
+
+                    subscriptions.forEach(sub => {
+                        // Abonelik adı harcama açıklamasında geçiyor mu?
+                        const isPaid = paidDescriptions.some(desc => desc.includes(sub.name.toLowerCase()));
+                        if (!isPaid) {
+                            unpaidSubscriptionsTotal += sub.amount;
+                        }
+                    });
+
+                    const totalIncome = summaryRow?.total_income || 0;
+                    const totalExpense = (summaryRow?.total_expense || 0) + unpaidSubscriptionsTotal;
+
+                    resolve({
+                        total_income: totalIncome,
+                        total_expense: totalExpense,
+                        balance: totalIncome - totalExpense
+                    });
+                });
             });
         });
     });
@@ -261,6 +318,47 @@ const getBudgetStatus = (userId) => {
                 ...r,
                 percentage: r.budget_limit > 0 ? Math.round((r.spent / r.budget_limit) * 100) : 0
             })));
+        });
+    });
+};
+
+// Harcama analizi (pie chart için kategori + abonelik)
+const getExpenseAnalysis = (userId) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+        // Kategoriye göre harcamalar
+        const categorySql = `
+            SELECT 
+                c.name as name,
+                SUM(e.amount) as value
+            FROM expenses e
+            INNER JOIN categories c ON e.category_id = c.id
+            WHERE e.user_id = ? AND e.date BETWEEN ? AND ? AND c.type = 'Gider'
+            GROUP BY c.id
+        `;
+
+        // Aktif abonelikler
+        const subSql = `SELECT SUM(amount) as total FROM subscriptions WHERE user_id = ? AND is_active = 1`;
+
+        db.all(categorySql, [userId, startOfMonth, endOfMonth], (err, categoryRows) => {
+            if (err) return reject(err);
+
+            db.get(subSql, [userId], (err, subRow) => {
+                if (err) return reject(err);
+
+                let result = categoryRows || [];
+                const subscriptionTotal = subRow?.total || 0;
+
+                // Abonelikleri ayrı kategori olarak ekle
+                if (subscriptionTotal > 0) {
+                    result.push({ name: 'Abonelikler', value: subscriptionTotal });
+                }
+
+                resolve(result);
+            });
         });
     });
 };
@@ -434,6 +532,148 @@ const deleteNote = (userId, noteId) => {
     });
 };
 
+// ==================== SUBSCRIPTION FUNCTIONS ====================
+
+// Kullanıcının aboneliklerini getir
+const getAllSubscriptions = (userId) => {
+    return new Promise((resolve, reject) => {
+        const sql = `
+            SELECT s.*, c.name as category_name 
+            FROM subscriptions s
+            LEFT JOIN categories c ON s.category_id = c.id
+            WHERE s.user_id = ? AND s.is_active = 1
+            ORDER BY s.billing_day ASC
+        `;
+        db.all(sql, [userId], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+};
+
+// Abonelik ekle
+const addSubscription = (userId, name, amount, billingDay, categoryId = null) => {
+    return new Promise((resolve, reject) => {
+        const sql = 'INSERT INTO subscriptions (user_id, name, amount, billing_day, category_id) VALUES (?, ?, ?, ?, ?)';
+        db.run(sql, [userId, name, amount, billingDay, categoryId], function (err) {
+            if (err) reject(err);
+            else resolve({ id: this.lastID, user_id: userId, name, amount, billing_day: billingDay, category_id: categoryId, is_active: 1 });
+        });
+    });
+};
+
+// Abonelik güncelle (sadece kullanıcının kendi aboneliği)
+const updateSubscription = (userId, subscriptionId, data) => {
+    return new Promise((resolve, reject) => {
+        const { amount, name, billingDay, categoryId } = data;
+
+        // Dinamik SQL oluştur (sadece gelen alanları güncelle)
+        const updates = [];
+        const params = [];
+
+        if (amount !== undefined) {
+            if (typeof amount !== 'number' || isNaN(amount) || amount < 0) {
+                return reject(new Error('Tutar sayısal ve pozitif bir değer olmalıdır'));
+            }
+            updates.push('amount = ?');
+            params.push(amount);
+        }
+        if (name !== undefined) {
+            updates.push('name = ?');
+            params.push(name);
+        }
+        if (billingDay !== undefined) {
+            if (billingDay < 1 || billingDay > 31) {
+                return reject(new Error('Ödeme günü 1-31 arasında olmalıdır'));
+            }
+            updates.push('billing_day = ?');
+            params.push(billingDay);
+        }
+        if (categoryId !== undefined) {
+            updates.push('category_id = ?');
+            params.push(categoryId);
+        }
+
+        if (updates.length === 0) {
+            return reject(new Error('Güncellenecek alan belirtilmedi'));
+        }
+
+        params.push(subscriptionId, userId);
+
+        const sql = `UPDATE subscriptions SET ${updates.join(', ')} WHERE id = ? AND user_id = ? AND is_active = 1`;
+
+        db.run(sql, params, function (err) {
+            if (err) reject(err);
+            else if (this.changes === 0) reject(new Error('Abonelik bulunamadı veya yetkiniz yok'));
+            else resolve({ updated: true, id: subscriptionId });
+        });
+    });
+};
+
+// Abonelik sil/deaktif et
+const deleteSubscription = (userId, subscriptionId) => {
+    return new Promise((resolve, reject) => {
+        db.run('UPDATE subscriptions SET is_active = 0 WHERE id = ? AND user_id = ?', [subscriptionId, userId], function (err) {
+            if (err) reject(err);
+            else resolve({ deleted: this.changes > 0 });
+        });
+    });
+};
+
+// Bu ay bekleyen ödemeleri getir
+const getPendingPayments = (userId) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        const currentDay = now.getDate();
+
+        // Aktif abonelikleri getir
+        const subscriptionsSql = `
+            SELECT s.*, c.name as category_name 
+            FROM subscriptions s
+            LEFT JOIN categories c ON s.category_id = c.id
+            WHERE s.user_id = ? AND s.is_active = 1
+        `;
+
+        db.all(subscriptionsSql, [userId], (err, subscriptions) => {
+            if (err) return reject(err);
+
+            // Bu ay yapılan ödemeleri kontrol et
+            const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+            const endOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-31`;
+
+            const expensesSql = `
+                SELECT DISTINCT description FROM expenses 
+                WHERE user_id = ? AND date BETWEEN ? AND ?
+            `;
+
+            db.all(expensesSql, [userId, startOfMonth, endOfMonth], (err, expenses) => {
+                if (err) return reject(err);
+
+                const paidDescriptions = expenses.map(e => e.description);
+
+                const pendingPayments = subscriptions.map(sub => {
+                    const isPaid = paidDescriptions.some(desc => desc && desc.includes(sub.name));
+                    const dueDate = new Date(currentYear, currentMonth - 1, sub.billing_day);
+                    const isOverdue = currentDay > sub.billing_day && !isPaid;
+                    const isDueToday = currentDay === sub.billing_day && !isPaid;
+
+                    return {
+                        ...sub,
+                        is_paid: isPaid,
+                        is_overdue: isOverdue,
+                        is_due_today: isDueToday,
+                        due_date: dueDate.toISOString().split('T')[0]
+                    };
+                }).filter(p => !p.is_paid);
+
+                resolve(pendingPayments);
+            });
+        });
+    });
+};
+
 module.exports = {
     db,
     initializeDatabase,
@@ -457,7 +697,14 @@ module.exports = {
     addNote,
     updateNote,
     deleteNote,
+    // Subscription functions
+    getAllSubscriptions,
+    addSubscription,
+    updateSubscription,
+    deleteSubscription,
+    getPendingPayments,
     // Summary
     getMonthlySummary,
+    getExpenseAnalysis,
     closeDatabase
 };
