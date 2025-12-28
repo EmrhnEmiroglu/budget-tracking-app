@@ -15,7 +15,11 @@ const {
   createUser,
   findUserByEmail,
   findUserById,
-  verifyPassword
+  verifyPassword,
+  getAllNotes,
+  addNote,
+  updateNote,
+  deleteNote
 } = require('./database');
 const { generateToken, authMiddleware } = require('./auth');
 
@@ -392,5 +396,89 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+// ==================== NOTES API (Protected) ====================
+
+// GET /api/notes - Kullanıcının notlarını getir
+app.get('/api/notes', authMiddleware, async (req, res) => {
+  try {
+    const notes = await getAllNotes(req.userId);
+    res.json({
+      success: true,
+      data: notes,
+      count: notes.length
+    });
+  } catch (error) {
+    console.error('Not listeleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Notlar alınırken bir hata oluştu' });
+  }
+});
+
+// POST /api/notes - Yeni not ekle
+app.post('/api/notes', authMiddleware, async (req, res) => {
+  try {
+    const { title, content, due_date } = req.body;
+
+    if (!title || title.trim().length < 1) {
+      return res.status(400).json({ success: false, error: 'Başlık gerekli' });
+    }
+
+    // Tarih formatı doğrulaması
+    let validatedDueDate = null;
+    if (due_date) {
+      const parsedDate = new Date(due_date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ success: false, error: 'Geçersiz tarih formatı' });
+      }
+      validatedDueDate = due_date;
+    }
+
+    const note = await addNote(req.userId, title.trim(), content?.trim() || '', validatedDueDate);
+    res.status(201).json({
+      success: true,
+      message: 'Not eklendi',
+      data: note
+    });
+  } catch (error) {
+    console.error('Not ekleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Not eklenirken bir hata oluştu' });
+  }
+});
+
+// PUT /api/notes/:id - Notu güncelle
+app.put('/api/notes/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, is_completed, due_date } = req.body;
+
+    const result = await updateNote(req.userId, parseInt(id), { title, content, is_completed, due_date });
+
+    if (result.updated) {
+      res.json({ success: true, message: 'Not güncellendi' });
+    } else {
+      res.status(404).json({ success: false, error: 'Not bulunamadı veya güncelleme yapılmadı' });
+    }
+  } catch (error) {
+    console.error('Not güncelleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Not güncellenirken bir hata oluştu' });
+  }
+});
+
+// DELETE /api/notes/:id - Notu sil
+app.delete('/api/notes/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await deleteNote(req.userId, parseInt(id));
+
+    if (result.deleted) {
+      res.json({ success: true, message: 'Not silindi' });
+    } else {
+      res.status(404).json({ success: false, error: 'Not bulunamadı' });
+    }
+  } catch (error) {
+    console.error('Not silme hatası:', error);
+    res.status(500).json({ success: false, error: 'Not silinirken bir hata oluştu' });
+  }
+});
 
 startServer();

@@ -68,6 +68,25 @@ const initializeDatabase = () => {
                 if (err) console.error('Expenses tablo hatası:', err.message);
             });
 
+            // Notes tablosu
+            db.run(`
+        CREATE TABLE IF NOT EXISTS notes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT,
+          is_completed INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `, (err) => {
+                if (err) console.error('Notes tablo hatası:', err.message);
+                else {
+                    // Migration: due_date sütunu ekle
+                    db.run("ALTER TABLE notes ADD COLUMN due_date DATETIME", () => { });
+                }
+            });
+
             // Seed data - Başlangıç kategorileri
             const seedCategories = [
                 { name: 'Market', type: 'Gider' },
@@ -353,6 +372,68 @@ const closeDatabase = () => {
     });
 };
 
+// ==================== NOTES FUNCTIONS ====================
+
+// Kullanıcının notlarını getir
+const getAllNotes = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.all('SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC', [userId], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+};
+
+// Not ekle
+const addNote = (userId, title, content, dueDate = null) => {
+    return new Promise((resolve, reject) => {
+        const sql = 'INSERT INTO notes (user_id, title, content, due_date) VALUES (?, ?, ?, ?)';
+        const dueDateValue = dueDate ? new Date(dueDate).toISOString() : null;
+        db.run(sql, [userId, title, content || '', dueDateValue], function (err) {
+            if (err) reject(err);
+            else resolve({ id: this.lastID, user_id: userId, title, content, is_completed: 0, due_date: dueDateValue });
+        });
+    });
+};
+
+// Not güncelle
+const updateNote = (userId, noteId, data) => {
+    return new Promise((resolve, reject) => {
+        const fields = [];
+        const values = [];
+
+        if (data.title !== undefined) { fields.push('title = ?'); values.push(data.title); }
+        if (data.content !== undefined) { fields.push('content = ?'); values.push(data.content); }
+        if (data.is_completed !== undefined) { fields.push('is_completed = ?'); values.push(data.is_completed ? 1 : 0); }
+        if (data.due_date !== undefined) {
+            fields.push('due_date = ?');
+            values.push(data.due_date ? new Date(data.due_date).toISOString() : null);
+        }
+
+        if (fields.length === 0) {
+            return resolve({ updated: false });
+        }
+
+        values.push(noteId, userId);
+        const sql = `UPDATE notes SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`;
+
+        db.run(sql, values, function (err) {
+            if (err) reject(err);
+            else resolve({ updated: this.changes > 0 });
+        });
+    });
+};
+
+// Not sil
+const deleteNote = (userId, noteId) => {
+    return new Promise((resolve, reject) => {
+        db.run('DELETE FROM notes WHERE id = ? AND user_id = ?', [noteId, userId], function (err) {
+            if (err) reject(err);
+            else resolve({ deleted: this.changes > 0 });
+        });
+    });
+};
+
 module.exports = {
     db,
     initializeDatabase,
@@ -371,6 +452,11 @@ module.exports = {
     getAllExpenses,
     getFilteredExpenses,
     deleteExpense,
+    // Notes functions
+    getAllNotes,
+    addNote,
+    updateNote,
+    deleteNote,
     // Summary
     getMonthlySummary,
     closeDatabase

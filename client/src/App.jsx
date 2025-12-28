@@ -6,6 +6,7 @@ import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import AddTransaction from './pages/AddTransaction'
+import Notes from './pages/Notes'
 import Settings from './pages/Settings'
 
 // Protected Route component
@@ -69,6 +70,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="add" element={<AddTransaction />} />
+        <Route path="notes" element={<Notes />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 
