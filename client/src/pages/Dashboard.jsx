@@ -154,7 +154,6 @@ export default function Dashboard() {
                                     {pieChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
                                 </Pie>
                                 <Tooltip
-                                    formatter={(v) => formatMoney(v)}
                                     contentStyle={{
                                         backgroundColor: darkMode ? '#18181b' : '#fff',
                                         borderRadius: '16px',
@@ -162,6 +161,7 @@ export default function Dashboard() {
                                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                                     }}
                                     itemStyle={{ color: darkMode ? '#fff' : '#000' }}
+                                    formatter={(value) => [formatMoney(value), 'Tutar']}
                                 />
                                 <Legend iconType="circle" />
                             </PieChart>
@@ -188,7 +188,6 @@ export default function Dashboard() {
                                 />
                                 <Tooltip
                                     cursor={{ fill: darkMode ? '#27272a' : '#f4f4f5', radius: 8 }}
-                                    formatter={(v) => formatMoney(v)}
                                     contentStyle={{
                                         backgroundColor: darkMode ? '#18181b' : '#fff',
                                         borderRadius: '16px',
@@ -196,8 +195,9 @@ export default function Dashboard() {
                                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                                     }}
                                     itemStyle={{ color: darkMode ? '#fff' : '#000' }}
+                                    formatter={(value) => [formatMoney(value), 'Tutar']}
                                 />
-                                <Bar dataKey="value" radius={[8, 8, 8, 8]} />
+                                <Bar dataKey="value" name="Tutar" radius={[8, 8, 8, 8]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
