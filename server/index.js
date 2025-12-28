@@ -4,9 +4,13 @@ const cors = require('cors');
 const {
   initializeDatabase,
   getAllCategories,
+  addUserCategory,
+  setCategoryBudget,
+  getBudgetStatus,
   addExpense,
   getAllExpenses,
   getFilteredExpenses,
+  getMonthlySummary,
   deleteExpense,
   createUser,
   findUserByEmail,
@@ -156,10 +160,32 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 
 // ==================== CATEGORIES API ====================
 
-// GET /api/categories - Tüm kategorileri listele (public)
-app.get('/api/categories', async (req, res) => {
+// ==================== DASHBOARD API ====================
+
+// GET /api/summary - Aylık özet (Gelir, Gider, Bakiye)
+app.get('/api/summary', authMiddleware, async (req, res) => {
   try {
-    const categories = await getAllCategories();
+    const summary = await getMonthlySummary(req.userId);
+    res.json({
+      success: true,
+      data: summary
+    });
+  } catch (error) {
+    console.error('Özet bilgisi hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Özet bilgisi alınırken bir hata oluştu'
+    });
+  }
+});
+
+// ==================== CATEGORIES API ====================
+
+// GET /api/categories - Kategorileri listele (Auth required for custom categories)
+app.get('/api/categories', authMiddleware, async (req, res) => {
+  try {
+    // req.userId authMiddleware'den geliyor
+    const categories = await getAllCategories(req.userId);
     res.json({
       success: true,
       data: categories,
@@ -171,6 +197,65 @@ app.get('/api/categories', async (req, res) => {
       success: false,
       error: 'Kategoriler alınırken bir hata oluştu'
     });
+  }
+});
+
+// POST /api/categories - Yeni kategori ekle
+app.post('/api/categories', authMiddleware, async (req, res) => {
+  try {
+    const { name, type } = req.body;
+
+    if (!name || name.length < 2) {
+      return res.status(400).json({ success: false, error: 'Kategori adı en az 2 karakter olmalıdır' });
+    }
+
+    if (!['Gelir', 'Gider'].includes(type)) {
+      return res.status(400).json({ success: false, error: 'Geçersiz kategori türü' });
+    }
+
+    const category = await addUserCategory(req.userId, name, type);
+    res.status(201).json({
+      success: true,
+      message: 'Kategori eklendi',
+      data: category
+    });
+  } catch (error) {
+    console.error('Kategori ekleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Kategori eklenirken bir hata oluştu' });
+  }
+});
+
+// PUT /api/categories/:id/budget - Kategori bütçe limiti güncelle
+app.put('/api/categories/:id/budget', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { budget_limit } = req.body;
+
+    if (budget_limit === undefined || budget_limit < 0) {
+      return res.status(400).json({ success: false, error: 'Geçerli bir bütçe limiti giriniz' });
+    }
+
+    const result = await setCategoryBudget(req.userId, parseInt(id), parseFloat(budget_limit));
+
+    if (result.updated) {
+      res.json({ success: true, message: 'Bütçe limiti güncellendi', data: result });
+    } else {
+      res.status(404).json({ success: false, error: 'Kategori bulunamadı' });
+    }
+  } catch (error) {
+    console.error('Bütçe güncelleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Bütçe güncellenirken bir hata oluştu' });
+  }
+});
+
+// GET /api/budget-status - Bütçe durumunu getir
+app.get('/api/budget-status', authMiddleware, async (req, res) => {
+  try {
+    const budgetStatus = await getBudgetStatus(req.userId);
+    res.json({ success: true, data: budgetStatus });
+  } catch (error) {
+    console.error('Bütçe durumu hatası:', error);
+    res.status(500).json({ success: false, error: 'Bütçe durumu alınırken bir hata oluştu' });
   }
 });
 
