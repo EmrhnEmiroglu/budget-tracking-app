@@ -35,13 +35,20 @@ const initializeDatabase = () => {
             db.run(`
         CREATE TABLE IF NOT EXISTS categories (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
           name TEXT NOT NULL,
           type TEXT NOT NULL CHECK(type IN ('Gider', 'Gelir')),
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(name, type)
+          FOREIGN KEY (user_id) REFERENCES users(id)
         )
       `, (err) => {
                 if (err) console.error('Categories tablo hatası:', err.message);
+                else {
+                    // Migration: Mevcut tabloya user_id sütunu eklemeyi dene
+                    db.run("ALTER TABLE categories ADD COLUMN user_id INTEGER", () => { });
+                    // Migration: budget_limit sütunu ekle
+                    db.run("ALTER TABLE categories ADD COLUMN budget_limit REAL DEFAULT 0", () => { });
+                }
             });
 
             // Expenses tablosu (user_id ile)
@@ -148,11 +155,93 @@ const verifyPassword = async (plainPassword, hashedPassword) => {
 
 // ==================== CATEGORY FUNCTIONS ====================
 
-const getAllCategories = () => {
+const getAllCategories = (userId) => {
     return new Promise((resolve, reject) => {
-        db.all('SELECT * FROM categories ORDER BY type, name', [], (err, rows) => {
+        // Sistem kategorileri (user_id IS NULL) + Kullanıcı kategorileri
+        db.all('SELECT * FROM categories WHERE user_id IS NULL OR user_id = ? ORDER BY type, name', [userId], (err, rows) => {
             if (err) reject(err);
             else resolve(rows);
+        });
+    });
+};
+
+const addUserCategory = (userId, name, type) => {
+    return new Promise((resolve, reject) => {
+        const sql = 'INSERT INTO categories (user_id, name, type) VALUES (?, ?, ?)';
+        db.run(sql, [userId, name, type], function (err) {
+            if (err) reject(err);
+            else resolve({ id: this.lastID, user_id: userId, name, type });
+        });
+    });
+};
+
+const getMonthlySummary = (userId) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+        const sql = `
+            SELECT 
+                SUM(CASE WHEN c.type = 'Gelir' THEN e.amount ELSE 0 END) as total_income,
+                SUM(CASE WHEN c.type = 'Gider' THEN e.amount ELSE 0 END) as total_expense
+            FROM expenses e
+            LEFT JOIN categories c ON e.category_id = c.id
+            WHERE e.user_id = ? AND e.date BETWEEN ? AND ?
+        `;
+
+        db.get(sql, [userId, startOfMonth, endOfMonth], (err, row) => {
+            if (err) reject(err);
+            else resolve({
+                total_income: row?.total_income || 0,
+                total_expense: row?.total_expense || 0,
+                balance: (row?.total_income || 0) - (row?.total_expense || 0)
+            });
+        });
+    });
+};
+
+// Kategori bütçe limiti güncelle
+const setCategoryBudget = (userId, categoryId, budgetLimit) => {
+    return new Promise((resolve, reject) => {
+        // Sadece kullanıcının erişebildiği kategorileri güncelle
+        const sql = `UPDATE categories SET budget_limit = ? WHERE id = ? AND (user_id IS NULL OR user_id = ?)`;
+        db.run(sql, [budgetLimit, categoryId, userId], function (err) {
+            if (err) reject(err);
+            else resolve({ updated: this.changes > 0, categoryId, budgetLimit });
+        });
+    });
+};
+
+// Bütçe durumu getir (kategori bazlı harcama vs limit)
+const getBudgetStatus = (userId) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+        const sql = `
+            SELECT 
+                c.id,
+                c.name,
+                c.type,
+                COALESCE(c.budget_limit, 0) as budget_limit,
+                COALESCE(SUM(e.amount), 0) as spent
+            FROM categories c
+            LEFT JOIN expenses e ON c.id = e.category_id 
+                AND e.user_id = ? 
+                AND e.date BETWEEN ? AND ?
+            WHERE (c.user_id IS NULL OR c.user_id = ?) AND c.type = 'Gider'
+            GROUP BY c.id
+            ORDER BY c.name
+        `;
+
+        db.all(sql, [userId, startOfMonth, endOfMonth, userId], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows.map(r => ({
+                ...r,
+                percentage: r.budget_limit > 0 ? Math.round((r.spent / r.budget_limit) * 100) : 0
+            })));
         });
     });
 };
@@ -185,6 +274,7 @@ const getAllExpenses = (userId) => {
 };
 
 // Filtrelenmiş harcamaları getir (user_id + tarih aralığı + tür filtresi)
+// Filtrelenmiş harcamaları getir
 const getFilteredExpenses = (userId, startDate, endDate, type) => {
     return new Promise((resolve, reject) => {
         let sql = `
@@ -203,14 +293,20 @@ const getFilteredExpenses = (userId, startDate, endDate, type) => {
     `;
         const params = [userId];
 
-        if (startDate) {
-            sql += ` AND e.date >= ?`;
-            params.push(startDate);
+        if (startDate && endDate) {
+            sql += ` AND e.date BETWEEN ? AND ?`;
+            params.push(startDate, endDate);
+        } else {
+            if (startDate) {
+                sql += ` AND e.date >= ?`;
+                params.push(startDate);
+            }
+            if (endDate) {
+                sql += ` AND e.date <= ?`;
+                params.push(endDate);
+            }
         }
-        if (endDate) {
-            sql += ` AND e.date <= ?`;
-            params.push(endDate);
-        }
+
         if (type && type !== 'all') {
             sql += ` AND c.type = ?`;
             params.push(type);
@@ -267,10 +363,15 @@ module.exports = {
     verifyPassword,
     // Category functions
     getAllCategories,
+    addUserCategory,
+    setCategoryBudget,
+    getBudgetStatus,
     // Expense functions
     addExpense,
     getAllExpenses,
     getFilteredExpenses,
     deleteExpense,
+    // Summary
+    getMonthlySummary,
     closeDatabase
 };
