@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { findUserById } = require('./database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'gelir-gider-secret-key-2025';
 const JWT_EXPIRES_IN = '7d';
@@ -50,9 +51,40 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
+// Admin Middleware - Sadece admin kullanıcılar için
+const adminMiddleware = async (req, res, next) => {
+    try {
+        // authMiddleware'den gelen userId'yi kullan
+        if (!req.userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'Kimlik doğrulama gerekli'
+            });
+        }
+
+        const user = await findUserById(req.userId);
+
+        if (!user || !user.is_admin) {
+            return res.status(403).json({
+                success: false,
+                error: 'Bu işlem için admin yetkisi gereklidir'
+            });
+        }
+
+        next();
+    } catch (error) {
+        console.error('Admin middleware hatası:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Yetki kontrolü sırasında bir hata oluştu'
+        });
+    }
+};
+
 module.exports = {
     JWT_SECRET,
     generateToken,
     verifyToken,
-    authMiddleware
+    authMiddleware,
+    adminMiddleware
 };

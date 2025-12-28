@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { LayoutDashboard, Receipt, PlusCircle, Settings, LogOut, Moon, Sun, Wallet, StickyNote } from 'lucide-react'
+import { LayoutDashboard, Receipt, PlusCircle, Settings, LogOut, Moon, Sun, Wallet, StickyNote, CreditCard, Shield } from 'lucide-react'
 
 export default function MainLayout() {
     const { user, logout } = useAuth()
@@ -18,8 +18,11 @@ export default function MainLayout() {
         { path: '/', label: 'Özet', icon: <LayoutDashboard size={20} /> },
         { path: '/transactions', label: 'Hareketler', icon: <Receipt size={20} /> },
         { path: '/add', label: 'Ekle', icon: <PlusCircle size={20} /> },
+        { path: '/subscriptions', label: 'Abonelikler', icon: <CreditCard size={20} /> },
         { path: '/notes', label: 'Notlar & Hedefler', icon: <StickyNote size={20} /> },
-        { path: '/settings', label: 'Ayarlar', icon: <Settings size={20} /> }
+        { path: '/settings', label: 'Ayarlar', icon: <Settings size={20} /> },
+        // Admin-only nav item
+        ...(user?.is_admin ? [{ path: '/admin/catalog', label: 'Katalog Yönetimi', icon: <Shield size={20} />, isAdmin: true }] : [])
     ]
 
     return (
