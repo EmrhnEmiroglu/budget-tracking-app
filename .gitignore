@@ -31,3 +31,6 @@ npm-debug.log*
 # Database
 *.sqlite
 *.db
+
+# Agent/AI files
+.agent/
