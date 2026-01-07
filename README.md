@@ -7,6 +7,7 @@ Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygula
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4-06B6D4?logo=tailwindcss)
 ![Express](https://img.shields.io/badge/Express-5-000000?logo=express)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
+![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram)
 
 ---
 
@@ -30,6 +31,13 @@ Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygula
 - Ödeme günü hatırlatıcısı
 - Aylık toplam abonelik maliyeti hesaplama
 - **Abonelik fiyatı düzenleme** (Pencil icon ile)
+
+### 🤖 Telegram Bot Entegrasyonu
+- **Otomatik Hatırlatıcılar:** Abonelik ödeme günlerinde Telegram bildirimi
+- **Hedef Hatırlatıcıları:** Finansal hedef son günlerinde bildirim
+- **`/bakiye` Komutu:** Anlık bakiye, gelir ve gider özeti
+- **`/ozet` Komutu:** Aylık kategori bazlı harcama analizi
+- **Güvenlik:** Sadece belirlenen Chat ID'ye yanıt verir
 
 ### 🛡️ Admin Panel (Katalog Yönetimi)
 - Abonelik kataloğunu yönetme
@@ -58,7 +66,7 @@ Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygula
 | React 19 | UI framework |
 | Vite 7 | Build aracı |
 | Tailwind CSS 4 | Utility-first CSS |
-| React Router | Sayfa yönlendirme |
+| React Router 7 | Sayfa yönlendirme |
 | Recharts | Grafikler |
 | Lucide React | İkonlar |
 
@@ -69,6 +77,8 @@ Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygula
 | SQLite 3 | Veritabanı |
 | JWT | Kimlik doğrulama |
 | bcrypt | Şifre hashleme |
+| node-telegram-bot-api | Telegram entegrasyonu |
+| node-cron | Zamanlı görevler |
 | Nodemon | Geliştirme sunucusu |
 
 ---
@@ -89,6 +99,8 @@ cd GelirGider
 ```bash
 cd server
 npm install
+cp .env.example .env
+# .env dosyasını düzenleyin (JWT_SECRET ve Telegram ayarları)
 ```
 
 ### 3. Frontend Kurulumu
@@ -114,6 +126,28 @@ cd client
 npm run dev
 ```
 > ✅ Web uygulaması: `http://localhost:5173`
+
+---
+
+## ⚙️ Ortam Değişkenleri
+
+`server/.env` dosyasını oluşturun:
+
+```env
+# Zorunlu
+JWT_SECRET=your-super-secret-jwt-key
+
+# Telegram Bot (Opsiyonel)
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+TELEGRAM_CHAT_ID=123456789
+TELEGRAM_NOTIFY_TIME=09:00
+```
+
+### Telegram Bot Kurulumu
+1. Telegram'da [@BotFather](https://t.me/BotFather) ile yeni bot oluşturun
+2. Bot token'ı `.env` dosyasına ekleyin
+3. Chat ID'nizi bulmak için [@userinfobot](https://t.me/userinfobot) kullanın
+4. Sunucuyu yeniden başlatın
 
 ---
 
@@ -150,6 +184,8 @@ GelirGider/
 │   │   │   ├── Transactions.jsx
 │   │   │   ├── Subscriptions.jsx
 │   │   │   ├── CatalogManagement.jsx # Admin panel
+│   │   │   ├── Notes.jsx
+│   │   │   ├── Settings.jsx
 │   │   │   └── ...
 │   │   ├── App.jsx            # Router yapısı
 │   │   └── main.jsx           # Giriş noktası
@@ -159,8 +195,11 @@ GelirGider/
     ├── index.js               # API sunucusu & endpoints
     ├── database.js            # Veritabanı işlemleri
     ├── auth.js                # JWT & middleware
+    ├── services/
+    │   └── notificationService.js # Telegram bot & cron jobs
     ├── subscriptionCatalog.js # Varsayılan katalog
     ├── subscriptionCatalog.json # Güncellenmiş katalog (admin tarafından)
+    ├── .env.example           # Örnek ortam değişkenleri
     └── database.sqlite        # SQLite veritabanı
 ```
 
@@ -195,6 +234,19 @@ GelirGider/
 | Method | Endpoint | Açıklama |
 |--------|----------|----------|
 | POST | `/api/admin/update-catalog` | Kataloğu güncelle (Admin) |
+
+---
+
+## 🤖 Telegram Bot Komutları
+
+| Komut | Açıklama |
+|-------|----------|
+| `/bakiye` | Mevcut bakiye, toplam gelir ve gider |
+| `/ozet` | Bu ayın kategori bazlı harcama özeti |
+
+Bot ayrıca otomatik olarak şu bildirimleri gönderir:
+- 💰 Abonelik ödeme günlerinde hatırlatma
+- 🎯 Hedef son tarihlerinde hatırlatma
 
 ---
 
