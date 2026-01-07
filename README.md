@@ -139,15 +139,15 @@ JWT_SECRET=your-super-secret-jwt-key
 
 # Telegram Bot (Opsiyonel)
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-TELEGRAM_CHAT_ID=123456789
+TELEGRAM_BOT_USERNAME=your_bot_username
 TELEGRAM_NOTIFY_TIME=09:00
 ```
 
 ### Telegram Bot Kurulumu
 1. Telegram'da [@BotFather](https://t.me/BotFather) ile yeni bot oluşturun
-2. Bot token'ı `.env` dosyasına ekleyin
-3. Chat ID'nizi bulmak için [@userinfobot](https://t.me/userinfobot) kullanın
-4. Sunucuyu yeniden başlatın
+2. Bot token'ı ve username'i `.env` dosyasına ekleyin
+3. Sunucuyu yeniden başlatın
+4. Uygulamada Telegram ikonuna tıklayıp hesabınızı bağlayın
 
 ---
 
