@@ -171,7 +171,7 @@ app.post('/api/telegram/generate-code', authMiddleware, async (req, res) => {
       data: {
         code: result.code,
         expires: result.expires,
-        botUsername: 'FinansBot' // Bot username'inizi buraya yazın
+        botUsername: process.env.TELEGRAM_BOT_USERNAME || 'FinansBot'
       }
     });
   } catch (error) {

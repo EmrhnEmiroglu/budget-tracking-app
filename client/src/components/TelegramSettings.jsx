@@ -173,8 +173,8 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                         onClick={() => updatePreference('subscriptions', !status.preferences.subscriptions)}
                                         disabled={saving}
                                         className={`w-12 h-6 rounded-full transition-colors relative ${status.preferences.subscriptions
-                                                ? 'bg-emerald-500'
-                                                : darkMode ? 'bg-slate-700' : 'bg-slate-300'
+                                            ? 'bg-emerald-500'
+                                            : darkMode ? 'bg-slate-700' : 'bg-slate-300'
                                             }`}
                                     >
                                         <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-sm ${status.preferences.subscriptions ? 'translate-x-6' : 'translate-x-0.5'
@@ -203,8 +203,8 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                         onClick={() => updatePreference('goals', !status.preferences.goals)}
                                         disabled={saving}
                                         className={`w-12 h-6 rounded-full transition-colors relative ${status.preferences.goals
-                                                ? 'bg-emerald-500'
-                                                : darkMode ? 'bg-slate-700' : 'bg-slate-300'
+                                            ? 'bg-emerald-500'
+                                            : darkMode ? 'bg-slate-700' : 'bg-slate-300'
                                             }`}
                                     >
                                         <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-sm ${status.preferences.goals ? 'translate-x-6' : 'translate-x-0.5'
@@ -233,8 +233,8 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                         onClick={() => updatePreference('weeklySummary', !status.preferences.weeklySummary)}
                                         disabled={saving}
                                         className={`w-12 h-6 rounded-full transition-colors relative ${status.preferences.weeklySummary
-                                                ? 'bg-emerald-500'
-                                                : darkMode ? 'bg-slate-700' : 'bg-slate-300'
+                                            ? 'bg-emerald-500'
+                                            : darkMode ? 'bg-slate-700' : 'bg-slate-300'
                                             }`}
                                     >
                                         <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-sm ${status.preferences.weeklySummary ? 'translate-x-6' : 'translate-x-0.5'
@@ -248,8 +248,8 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                 onClick={disconnect}
                                 disabled={disconnecting}
                                 className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-colors ${darkMode
-                                        ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
-                                        : 'bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200'
+                                    ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
+                                    : 'bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200'
                                     }`}
                             >
                                 <Unlink size={16} />
@@ -291,8 +291,8 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                                 <button
                                                     onClick={copyCode}
                                                     className={`p-2 rounded-lg transition-colors ${copied
-                                                            ? 'bg-emerald-500 text-white'
-                                                            : darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                                        ? 'bg-emerald-500 text-white'
+                                                        : darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                                                         }`}
                                                 >
                                                     {copied ? <Check size={16} /> : <Copy size={16} />}
@@ -309,16 +309,22 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                         <p className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                                             Telegram botu aç
                                         </p>
-                                        <a
-                                            href="https://t.me/FinansBot"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className={`inline-flex items-center gap-2 mt-2 text-sm ${darkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-600 hover:text-sky-500'
-                                                }`}
-                                        >
-                                            <Send size={14} />
-                                            @FinansBot
-                                        </a>
+                                        {linkCode?.botUsername ? (
+                                            <a
+                                                href={`https://t.me/${linkCode.botUsername}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className={`inline-flex items-center gap-2 mt-2 text-sm ${darkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-600 hover:text-sky-500'
+                                                    }`}
+                                            >
+                                                <Send size={14} />
+                                                @{linkCode.botUsername}
+                                            </a>
+                                        ) : (
+                                            <p className={`text-xs mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                                Önce kod oluştur
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
 
@@ -347,8 +353,8 @@ export default function TelegramSettings({ isOpen, onClose, darkMode, authFetch 
                                 <button
                                     onClick={fetchStatus}
                                     className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-colors ${darkMode
-                                            ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                                         }`}
                                 >
                                     <RefreshCw size={16} />
