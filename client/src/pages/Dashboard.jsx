@@ -183,6 +183,7 @@ export default function Dashboard() {
                                     outerRadius={100}
                                     paddingAngle={5}
                                     dataKey="value"
+                                    nameKey="name"
                                     cornerRadius={6}
                                 >
                                     {pieChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}

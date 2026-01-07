@@ -33,6 +33,13 @@ const initializeDatabase = () => {
                 else {
                     // Migration: is_admin sütunu ekle (mevcut kullanıcılar için)
                     db.run("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0", () => { });
+                    // Migration: Telegram sütunları ekle
+                    db.run("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT", () => { });
+                    db.run("ALTER TABLE users ADD COLUMN telegram_link_code TEXT", () => { });
+                    db.run("ALTER TABLE users ADD COLUMN telegram_link_expires DATETIME", () => { });
+                    db.run("ALTER TABLE users ADD COLUMN notify_subscriptions INTEGER DEFAULT 1", () => { });
+                    db.run("ALTER TABLE users ADD COLUMN notify_goals INTEGER DEFAULT 1", () => { });
+                    db.run("ALTER TABLE users ADD COLUMN notify_weekly_summary INTEGER DEFAULT 0", () => { });
                 }
             });
 
@@ -674,6 +681,107 @@ const getPendingPayments = (userId) => {
     });
 };
 
+// ==================== TELEGRAM FUNCTIONS ====================
+
+// Telegram bağlantı kodu oluştur
+const generateTelegramLinkCode = (userId) => {
+    return new Promise((resolve, reject) => {
+        // 6 haneli random kod oluştur
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 dakika geçerli
+
+        const sql = `UPDATE users SET telegram_link_code = ?, telegram_link_expires = ? WHERE id = ?`;
+        db.run(sql, [code, expires, userId], function (err) {
+            if (err) reject(err);
+            else resolve({ code, expires });
+        });
+    });
+};
+
+// Telegram hesabını bağla (kod ile)
+const linkTelegramAccount = (code, chatId) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date().toISOString();
+        const sql = `SELECT id, username FROM users WHERE telegram_link_code = ? AND telegram_link_expires > ?`;
+
+        db.get(sql, [code.toUpperCase(), now], (err, user) => {
+            if (err) return reject(err);
+            if (!user) return resolve({ success: false, error: 'Geçersiz veya süresi dolmuş kod' });
+
+            // Chat ID'yi kaydet ve kodu temizle
+            const updateSql = `UPDATE users SET telegram_chat_id = ?, telegram_link_code = NULL, telegram_link_expires = NULL WHERE id = ?`;
+            db.run(updateSql, [chatId.toString(), user.id], function (err) {
+                if (err) reject(err);
+                else resolve({ success: true, username: user.username });
+            });
+        });
+    });
+};
+
+// Telegram bağlantı durumunu getir
+const getTelegramStatus = (userId) => {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT telegram_chat_id, notify_subscriptions, notify_goals, notify_weekly_summary FROM users WHERE id = ?`;
+        db.get(sql, [userId], (err, row) => {
+            if (err) reject(err);
+            else resolve({
+                connected: !!row?.telegram_chat_id,
+                preferences: {
+                    subscriptions: row?.notify_subscriptions === 1,
+                    goals: row?.notify_goals === 1,
+                    weeklySummary: row?.notify_weekly_summary === 1
+                }
+            });
+        });
+    });
+};
+
+// Telegram bildirim tercihlerini güncelle
+const updateTelegramPreferences = (userId, prefs) => {
+    return new Promise((resolve, reject) => {
+        const sql = `UPDATE users SET notify_subscriptions = ?, notify_goals = ?, notify_weekly_summary = ? WHERE id = ?`;
+        db.run(sql, [
+            prefs.subscriptions ? 1 : 0,
+            prefs.goals ? 1 : 0,
+            prefs.weeklySummary ? 1 : 0,
+            userId
+        ], function (err) {
+            if (err) reject(err);
+            else resolve({ updated: this.changes > 0 });
+        });
+    });
+};
+
+// Telegram bağlantısını kes
+const disconnectTelegram = (userId) => {
+    return new Promise((resolve, reject) => {
+        const sql = `UPDATE users SET telegram_chat_id = NULL WHERE id = ?`;
+        db.run(sql, [userId], function (err) {
+            if (err) reject(err);
+            else resolve({ disconnected: this.changes > 0 });
+        });
+    });
+};
+
+// Telegram bildirimi gönderilecek kullanıcıları getir (bildirim türüne göre)
+const getUsersForNotification = (notificationType) => {
+    return new Promise((resolve, reject) => {
+        let column;
+        switch (notificationType) {
+            case 'subscriptions': column = 'notify_subscriptions'; break;
+            case 'goals': column = 'notify_goals'; break;
+            case 'weeklySummary': column = 'notify_weekly_summary'; break;
+            default: return reject(new Error('Invalid notification type'));
+        }
+
+        const sql = `SELECT id, username, telegram_chat_id FROM users WHERE telegram_chat_id IS NOT NULL AND ${column} = 1`;
+        db.all(sql, [], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+};
+
 module.exports = {
     db,
     initializeDatabase,
@@ -706,5 +814,12 @@ module.exports = {
     // Summary
     getMonthlySummary,
     getExpenseAnalysis,
+    // Telegram functions
+    generateTelegramLinkCode,
+    linkTelegramAccount,
+    getTelegramStatus,
+    updateTelegramPreferences,
+    disconnectTelegram,
+    getUsersForNotification,
     closeDatabase
 };
