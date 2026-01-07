@@ -25,11 +25,17 @@ const {
   updateSubscription,
   deleteSubscription,
   getPendingPayments,
-  getExpenseAnalysis
+  getExpenseAnalysis,
+  // Telegram functions
+  generateTelegramLinkCode,
+  getTelegramStatus,
+  updateTelegramPreferences,
+  disconnectTelegram
 } = require('./database');
 const { generateToken, authMiddleware, adminMiddleware } = require('./auth');
 const fs = require('fs');
 const path = require('path');
+const notificationService = require('./services/notificationService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -136,6 +142,93 @@ app.get('/', (req, res) => {
       subscriptions: '/api/subscriptions'
     }
   });
+});
+
+// GET /api/admin/test-telegram (Test Endpoint)
+app.get('/api/admin/test-telegram', (req, res) => {
+  try {
+    const notifyTime = process.env.TELEGRAM_NOTIFY_TIME || '09:00';
+    const message = `🔔 <b>Sistem Test Bildirimi</b>\n\n` +
+      `✅ <b>Bağlantı Başarılı!</b>\n` +
+      `📅 Günlük bildirim saati: <b>${notifyTime}</b> olarak ayarlı.\n\n` +
+      `Sistem sorunsuz çalışıyor. 🚀`;
+
+    notificationService.sendTelegramMessage(message);
+    res.json({ success: true, message: 'Test mesajı gönderildi' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== TELEGRAM API (User-specific) ====================
+
+// POST /api/telegram/generate-code - Bağlantı kodu oluştur
+app.post('/api/telegram/generate-code', authMiddleware, async (req, res) => {
+  try {
+    const result = await generateTelegramLinkCode(req.userId);
+    res.json({
+      success: true,
+      data: {
+        code: result.code,
+        expires: result.expires,
+        botUsername: 'FinansBot' // Bot username'inizi buraya yazın
+      }
+    });
+  } catch (error) {
+    console.error('Telegram kod oluşturma hatası:', error);
+    res.status(500).json({ success: false, error: 'Kod oluşturulurken bir hata oluştu' });
+  }
+});
+
+// GET /api/telegram/status - Bağlantı durumu ve tercihler
+app.get('/api/telegram/status', authMiddleware, async (req, res) => {
+  try {
+    const status = await getTelegramStatus(req.userId);
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('Telegram durum hatası:', error);
+    res.status(500).json({ success: false, error: 'Durum alınırken bir hata oluştu' });
+  }
+});
+
+// PUT /api/telegram/preferences - Bildirim tercihlerini güncelle
+app.put('/api/telegram/preferences', authMiddleware, async (req, res) => {
+  try {
+    const { subscriptions, goals, weeklySummary } = req.body;
+
+    const result = await updateTelegramPreferences(req.userId, {
+      subscriptions: subscriptions !== undefined ? subscriptions : true,
+      goals: goals !== undefined ? goals : true,
+      weeklySummary: weeklySummary !== undefined ? weeklySummary : false
+    });
+
+    res.json({
+      success: true,
+      message: 'Tercihler güncellendi',
+      data: result
+    });
+  } catch (error) {
+    console.error('Telegram tercih güncelleme hatası:', error);
+    res.status(500).json({ success: false, error: 'Tercihler güncellenirken bir hata oluştu' });
+  }
+});
+
+// DELETE /api/telegram/disconnect - Bağlantıyı kes
+app.delete('/api/telegram/disconnect', authMiddleware, async (req, res) => {
+  try {
+    const result = await disconnectTelegram(req.userId);
+    res.json({
+      success: true,
+      message: 'Telegram bağlantısı kesildi',
+      data: result
+    });
+  } catch (error) {
+    console.error('Telegram bağlantı kesme hatası:', error);
+    res.status(500).json({ success: false, error: 'Bağlantı kesilirken bir hata oluştu' });
+  }
 });
 
 // ==================== AUTH API ====================
@@ -495,6 +588,7 @@ app.delete('/api/expenses/:id', authMiddleware, async (req, res) => {
 const startServer = async () => {
   try {
     await initializeDatabase();
+    notificationService.initScheduledJobs();
 
     app.listen(PORT, () => {
       console.log(`🚀 Sunucu http://localhost:${PORT} adresinde çalışıyor`);

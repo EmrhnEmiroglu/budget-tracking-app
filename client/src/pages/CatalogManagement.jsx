@@ -216,6 +216,22 @@ export default function CatalogManagement() {
         : 'bg-slate-50 border-slate-200 focus:border-indigo-500 text-slate-900'
         } border`
 
+    const testTelegram = async () => {
+        setSaving(prev => ({ ...prev, 'test-telegram': true }))
+        try {
+            const response = await authFetch(`${API_URL}/admin/test-telegram`)
+            const data = await response.json()
+            if (data.success) {
+                setSuccess('Telegram testi başarılı!')
+            } else {
+                setError(data.error || 'Test başarısız')
+            }
+        } catch (err) {
+            setError('Test hatası: ' + err.message)
+        }
+        setSaving(prev => ({ ...prev, 'test-telegram': false }))
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-20">
@@ -241,16 +257,29 @@ export default function CatalogManagement() {
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={() => setShowAddService(!showAddService)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${showAddService
-                        ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/25'
-                        }`}
-                >
-                    {showAddService ? <X size={18} /> : <Plus size={18} />}
-                    {showAddService ? 'İptal' : 'Yeni Servis'}
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={testTelegram}
+                        disabled={saving['test-telegram']}
+                        className={`hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all border ${darkMode
+                            ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 hover:bg-sky-500/20'
+                            : 'bg-sky-50 text-sky-600 border-sky-200 hover:bg-sky-100'
+                            }`}
+                    >
+                        {saving['test-telegram'] ? <Loader2 className="animate-spin" size={18} /> : <span>✈️</span>}
+                        Telegram Test
+                    </button>
+                    <button
+                        onClick={() => setShowAddService(!showAddService)}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${showAddService
+                            ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/25'
+                            }`}
+                    >
+                        {showAddService ? <X size={18} /> : <Plus size={18} />}
+                        {showAddService ? 'İptal' : 'Yeni Servis'}
+                    </button>
+                </div>
             </div>
 
             {/* Add New Service Form */}

@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { LayoutDashboard, Receipt, PlusCircle, Settings, LogOut, Moon, Sun, Wallet, StickyNote, CreditCard, Shield } from 'lucide-react'
+import { LayoutDashboard, Receipt, PlusCircle, Settings, LogOut, Moon, Sun, Wallet, StickyNote, CreditCard, Shield, Send } from 'lucide-react'
+import TelegramSettings from './TelegramSettings'
 
 export default function MainLayout() {
-    const { user, logout } = useAuth()
+    const { user, logout, authFetch } = useAuth()
     const navigate = useNavigate()
     const location = useLocation()
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
     const [darkMode, setDarkMode] = useState(true)
+    const [showTelegramModal, setShowTelegramModal] = useState(false)
 
     const toggleDarkMode = () => {
         setDarkMode(!darkMode)
@@ -107,7 +109,14 @@ export default function MainLayout() {
                         {navItems.find(i => i.path === location.pathname)?.label || 'Sayfa'}
                     </h2>
 
-                    <div className="flex items-center gap-4 ml-auto">
+                    <div className="flex items-center gap-3 ml-auto">
+                        <button
+                            onClick={() => setShowTelegramModal(true)}
+                            className={`p-2.5 rounded-full transition-all border ${darkMode ? 'bg-white/5 border-white/5 text-sky-400 hover:bg-sky-500/10' : 'bg-white border-slate-200 text-sky-500 hover:bg-sky-50 shadow-sm'}`}
+                            title="Telegram Bildirimleri"
+                        >
+                            <Send size={18} />
+                        </button>
                         <button
                             onClick={toggleDarkMode}
                             className={`p-2.5 rounded-full transition-all border ${darkMode ? 'bg-white/5 border-white/5 text-yellow-400 hover:bg-white/10' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 shadow-sm'}`}
@@ -130,6 +139,14 @@ export default function MainLayout() {
                     </div>
                 </main>
             </div>
+
+            {/* Telegram Settings Modal */}
+            <TelegramSettings
+                isOpen={showTelegramModal}
+                onClose={() => setShowTelegramModal(false)}
+                darkMode={darkMode}
+                authFetch={authFetch}
+            />
         </div>
     )
 }
