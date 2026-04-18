@@ -1,4 +1,4 @@
-# 💰 Finans - Kişisel Gelir Gider Takibi
+# 💰 Budget Tracking App
 
 Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygulaması. Gelirlerinizi, giderlerinizi ve aboneliklerinizi tek bir yerden takip edin.
 
@@ -91,8 +91,8 @@ Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygula
 
 ### 1. Projeyi Klonlayın
 ```bash
-git clone https://github.com/EmrhnEmiroglu/GelirGider.git
-cd GelirGider
+git clone https://github.com/EmrhnEmiroglu/budget-tracking-app.git
+cd budget-tracking-app
 ```
 
 ### 2. Backend Kurulumu
@@ -172,7 +172,7 @@ Sonra uygulamadan çıkış yapıp tekrar giriş yapın. Sidebar'da "Katalog Yö
 ## 📁 Proje Yapısı
 
 ```
-GelirGider/
+budget-tracking-app/
 ├── client/                    # Frontend (React + Vite)
 │   ├── src/
 │   │   ├── components/        # Ortak bileşenler
