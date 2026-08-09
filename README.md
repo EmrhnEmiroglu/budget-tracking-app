@@ -131,17 +131,31 @@ npm run dev
 
 ## ⚙️ Ortam Değişkenleri
 
-`server/.env` dosyasını oluşturun:
+`server/.env` dosyasını oluşturun (`server/.env.example` dosyasını kopyalayabilirsiniz):
 
 ```env
-# Zorunlu
-JWT_SECRET=your-super-secret-jwt-key
+# Zorunlu — tanımlı değilse sunucu başlamaz
+JWT_SECRET=rastgele-uzun-bir-deger
 
 # Telegram Bot (Opsiyonel)
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_BOT_USERNAME=your_bot_username
 TELEGRAM_NOTIFY_TIME=09:00
+
+# E-posta doğrulama — Gmail SMTP (Opsiyonel)
+# EMAIL_PASS: Gmail uygulama şifresi (app password), normal hesap şifresi değil
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-16-char-app-password
 ```
+
+`JWT_SECRET` için güvenli bir değer üretmek:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+> ⚠️ `server/.env` dosyası gizli bilgiler içerir ve `.gitignore` ile depo dışında
+> tutulur. Bu dosyayı asla herkese açık bir yere yüklemeyin.
 
 ### Telegram Bot Kurulumu
 1. Telegram'da [@BotFather](https://t.me/BotFather) ile yeni bot oluşturun

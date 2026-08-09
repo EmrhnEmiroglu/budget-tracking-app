@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_URL } from '../config';
 
 const AuthContext = createContext(null);
 
@@ -49,7 +48,7 @@ export const AuthProvider = ({ children }) => {
         initAuth();
     }, []);
 
-    // Kayıt ol
+    // Kayıt ol — artık otomatik giriş YOK; e-posta doğrulaması gerekir
     const register = async (username, email, password) => {
         try {
             const response = await fetch(`${API_URL}/auth/register`, {
@@ -61,15 +60,51 @@ export const AuthProvider = ({ children }) => {
             const data = await response.json();
 
             if (data.success) {
-                localStorage.setItem('token', data.data.token);
-                setToken(data.data.token);
-                setUser(data.data.user);
-                return { success: true };
+                // Token dönmüyor; çağıran doğrulama ekranına yönlendirir
+                return { success: true, requiresVerification: data.requiresVerification, email: data.email };
             } else {
                 return { success: false, error: data.error };
             }
         } catch (error) {
             console.error('Register error:', error);
+            return { success: false, error: 'Sunucuya bağlanılamadı' };
+        }
+    };
+
+    // E-posta doğrulama kodunu kontrol et — başarılıysa giriş yap
+    const verifyEmail = async (email, code) => {
+        try {
+            const response = await fetch(`${API_URL}/auth/verify-email`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, code })
+            });
+            const data = await response.json();
+            if (data.success) {
+                localStorage.setItem('token', data.data.token);
+                setToken(data.data.token);
+                setUser(data.data.user);
+                return { success: true };
+            }
+            return { success: false, error: data.error };
+        } catch (error) {
+            console.error('Verify email error:', error);
+            return { success: false, error: 'Sunucuya bağlanılamadı' };
+        }
+    };
+
+    // Doğrulama kodunu yeniden gönder
+    const resendCode = async (email) => {
+        try {
+            const response = await fetch(`${API_URL}/auth/resend-code`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await response.json();
+            return { success: data.success, error: data.error };
+        } catch (error) {
+            console.error('Resend code error:', error);
             return { success: false, error: 'Sunucuya bağlanılamadı' };
         }
     };
@@ -91,7 +126,8 @@ export const AuthProvider = ({ children }) => {
                 setUser(data.data.user);
                 return { success: true };
             } else {
-                return { success: false, error: data.error };
+                // Doğrulanmamış hesap → çağıran doğrulama ekranına yönlendirir
+                return { success: false, error: data.error, requiresVerification: data.requiresVerification, email: data.email };
             }
         } catch (error) {
             console.error('Login error:', error);
@@ -146,6 +182,8 @@ export const AuthProvider = ({ children }) => {
         loading,
         isAuthenticated: !!user && !!token,
         register,
+        verifyEmail,
+        resendCode,
         login,
         logout,
         authFetch

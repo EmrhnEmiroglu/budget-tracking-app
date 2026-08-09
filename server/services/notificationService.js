@@ -5,7 +5,8 @@ const {
     db,
     getMonthlySummary,
     getExpenseAnalysis,
-    linkTelegramAccount
+    linkTelegramAccount,
+    getUsersForNotification
 } = require('../database');
 
 let bot = null;
@@ -21,8 +22,10 @@ const getAdminUserId = () => {
     });
 };
 
-const sendTelegramMessage = (message) => {
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+// Belirli bir chat ID'ye mesaj gönder.
+// chatId verilmezse geriye dönük uyumluluk için global TELEGRAM_CHAT_ID kullanılır
+// (örn. /api/admin/test-telegram test endpoint'i).
+const sendTelegramMessage = (message, chatId = process.env.TELEGRAM_CHAT_ID) => {
     if (!bot || !chatId) {
         console.warn('Bot başlatılmadı veya Chat ID eksik! Bildirim gönderilemedi.');
         return;
@@ -30,49 +33,77 @@ const sendTelegramMessage = (message) => {
     bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
 };
 
+// Bir kullanıcının bugün ödemesi gelen aktif aboneliklerini getir
+const getUserSubscriptionsDueToday = (userId, dayOfMonth) => {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT name, amount FROM subscriptions
+                     WHERE user_id = ? AND billing_day = ? AND is_active = 1`;
+        db.all(sql, [userId, dayOfMonth], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+};
+
 const checkDailyReminders = async () => {
     console.log('📅 Günlük bildirim kontrolü çalışıyor...');
 
     const today = new Date();
     const dayOfMonth = today.getDate();
-    const dateStr = today.toISOString().split('T')[0];
 
-    // 1. Abonelik Kontrolü
+    // 1. Abonelik Kontrolü — kullanıcı bazlı
+    // Sadece Telegram'ı bağlı VE abonelik bildirimi açık kullanıcılara,
+    // kendi aboneliklerini, kendi chat ID'lerine gönder.
     try {
-        const sql = `SELECT name, amount FROM subscriptions WHERE billing_day = ?`;
-        db.all(sql, [dayOfMonth], (err, rows) => {
-            if (err) {
-                console.error('Abonelik sorgu hatası:', err);
-                return;
+        const users = await getUsersForNotification('subscriptions');
+
+        for (const user of users) {
+            const dueSubs = await getUserSubscriptionsDueToday(user.id, dayOfMonth);
+
+            for (const sub of dueSubs) {
+                const message = `💰 <b>Ödeme Hatırlatıcı</b>\n\nBugün <b>${sub.name}</b> ödemen var!\nTutar: <b>₺${sub.amount.toFixed(2)}</b>`;
+                sendTelegramMessage(message, user.telegram_chat_id);
             }
-            if (rows && rows.length > 0) {
-                rows.forEach(sub => {
-                    const message = `💰 <b>Ödeme Hatırlatıcı</b>\n\nBugün <b>${sub.name}</b> ödemen var!\nTutar: <b>₺${sub.amount.toFixed(2)}</b>`;
-                    sendTelegramMessage(message);
-                });
-            }
-        });
+        }
     } catch (e) {
         console.error('Abonelik kontrol hatası:', e);
     }
 
-    // 2. Hedef Kontrolü
+    // 2. Hedef Kontrolü — DEVRE DIŞI
+    // NOT: "Finansal hedef" özelliği henüz yok. notes tablosunda
+    // type/target_amount/current_amount/deadline kolonları bulunmuyor
+    // (mevcut şema: title, content, is_completed, due_date).
+    // Eski sorgu bu kolonları istediği için her çalıştığında SQLite hatası veriyordu.
+    // Gerçek hedef özelliği eklendiğinde (şema + UI + API) burası yeniden yazılmalı.
+};
+
+// Aylık özet — her ayın 1'inde, "Aylık Özet" tercihi açık kullanıcılara
+// bu ayki bakiye/gelir/gider özetini gönderir.
+// (DB anahtarı tarihsel sebeple 'weeklySummary' / notify_weekly_summary olarak kaldı.)
+const sendMonthlySummary = async () => {
+    console.log('📊 Aylık özet kontrolü çalışıyor...');
+
     try {
-        const sql = `SELECT title, target_amount, current_amount FROM notes WHERE type = 'goal' AND deadline = ?`;
-        db.all(sql, [dateStr], (err, rows) => {
-            if (err) {
-                console.error('Hedef sorgu hatası:', err);
-                return;
+        const users = await getUsersForNotification('weeklySummary');
+
+        for (const user of users) {
+            try {
+                const summary = await getMonthlySummary(user.id);
+
+                const message = `📊 <b>Aylık Finansal Özet</b>\n\n` +
+                    `Merhaba <b>${user.username}</b>! İşte bu ayki durumun:\n\n` +
+                    `💵 <b>Net Bakiye:</b> ₺${summary.balance.toFixed(2)}\n` +
+                    `📥 <b>Toplam Gelir:</b> ₺${summary.total_income.toFixed(2)}\n` +
+                    `📤 <b>Toplam Gider:</b> ₺${summary.total_expense.toFixed(2)}\n\n` +
+                    `İyi aylar! 🚀`;
+
+                sendTelegramMessage(message, user.telegram_chat_id);
+            } catch (e) {
+                console.error(`Aylık özet gönderme hatası (user ${user.id}):`, e);
             }
-            if (rows && rows.length > 0) {
-                rows.forEach(goal => {
-                    const message = `🎯 <b>Hedef Hatırlatıcı</b>\n\n"<b>${goal.title}</b>" hedefinin son günü geldi!\nDurum: ₺${goal.current_amount} / ₺${goal.target_amount}`;
-                    sendTelegramMessage(message);
-                });
-            }
-        });
+        }
     } catch (e) {
-        console.error('Hedef kontrol hatası:', e);
+        console.error('Aylık özet kontrol hatası:', e);
     }
 };
 
@@ -94,8 +125,21 @@ const initScheduledJobs = () => {
     bot = new TelegramBot(token, { polling: true });
 
     // Hata dinleyicisi (Polling hatalarını yakalamak için)
+    let conflictWarned = false;
     bot.on('polling_error', (error) => {
-        console.error('Telegram Polling Hatası:', error.code, error.message);
+        // 409 Conflict: Bot başka bir yerde de çalışıyor (örn. eski bir sunucu açık).
+        // Bu durumda ekranı yüzlerce satırla doldurmamak için polling'i durdurup
+        // tek bir uyarı veriyoruz. Aynı anda yalnızca bir sunucu instance'ı çalışmalı.
+        if (error.code === 'ETELEGRAM' && /409/.test(error.message)) {
+            if (!conflictWarned) {
+                conflictWarned = true;
+                console.warn('⚠️ Telegram botu başka bir yerde de çalışıyor (409). Bu instance\'ın bot dinleyicisi durduruldu. (Uygulamanın geri kalanı normal çalışır.)');
+                bot.stopPolling().catch(() => { });
+            }
+            return;
+        }
+        // Diğer polling hataları: sadeleştirilmiş tek satır
+        console.error('Telegram Polling Hatası:', error.code, '-', error.message);
     });
 
     console.log('🤖 Telegram Botu başlatıldı ve dinlemeye geçti...');
@@ -238,10 +282,22 @@ const initScheduledJobs = () => {
     });
 
     console.log(`✅ Telegram bildirim zamanlayıcısı kuruldu (Her gün ${notifyTime})`);
+
+    // Aylık özet — her ayın 1'inde, günlük bildirim saatiyle aynı saatte
+    // Cron: dakika saat 1 * *  (ayın 1'i)
+    const monthlySchedule = `${parseInt(minute || 0)} ${parseInt(hour || 9)} 1 * *`;
+    cron.schedule(monthlySchedule, () => {
+        sendMonthlySummary();
+    }, {
+        timezone: "Europe/Istanbul"
+    });
+
+    console.log(`✅ Aylık özet zamanlayıcısı kuruldu (Her ayın 1'i ${notifyTime})`);
 };
 
 module.exports = {
     initScheduledJobs,
     sendTelegramMessage,
-    checkDailyReminders
+    checkDailyReminders,
+    sendMonthlySummary
 };

@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useOutletContext } from 'react-router-dom'
-
-const API_URL = 'http://localhost:5000/api'
+import { Download, Trash2, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { API_URL } from '../config'
 
 export default function Transactions() {
     const { authFetch } = useAuth()
-    const { darkMode } = useOutletContext()
 
     const [expenses, setExpenses] = useState([])
     const [loading, setLoading] = useState(true)
@@ -109,7 +107,7 @@ export default function Transactions() {
             .join('\n')
 
         // UTF-8 BOM ile dosya oluştur
-        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+        const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' })
         const link = document.createElement('a')
         link.href = URL.createObjectURL(blob)
         link.download = `finans-raporu-${filters.startDate}-${filters.endDate}.csv`
@@ -119,8 +117,13 @@ export default function Transactions() {
     const formatMoney = (a) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(a)
     const formatDate = (d) => new Date(d).toLocaleDateString('tr-TR')
 
+    const labelCls = "block text-[10px] uppercase tracking-[0.15em] mono mb-1.5"
+    const labelStyle = { color: 'var(--text-3)' }
+    const fieldCls = "w-full field px-3 py-2 text-sm outline-none transition-all"
+    const thCls = "px-6 py-4 text-[11px] font-semibold uppercase tracking-wide mono"
+
     return (
-        <div className="space-y-6">
+        <div className="px-8 py-6 space-y-6 rise-stagger" style={{ maxWidth: 1480, margin: '0 auto' }}>
             {/* Delete Confirmation Modal */}
             {deleteModal.isOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -128,27 +131,28 @@ export default function Transactions() {
                         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
                         onClick={() => setDeleteModal({ isOpen: false, expenseId: null, expenseName: '' })}
                     />
-                    <div className={`relative z-10 w-full max-w-md rounded-2xl p-6 shadow-2xl ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                    <div className="card relative z-10 w-full max-w-md p-6 rise">
                         <div className="text-center">
-                            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-rose-500/20 flex items-center justify-center text-4xl">
-                                🗑️
+                            <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: 'color-mix(in oklab, var(--danger) 15%, transparent)', color: 'var(--danger)' }}>
+                                <Trash2 size={28} />
                             </div>
-                            <h3 className={`text-xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                            <h3 className="text-xl font-bold mb-2 display" style={{ color: 'var(--text)' }}>
                                 İşlemi Sil
                             </h3>
-                            <p className={`mb-2 text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                            <p className="mb-2 text-sm" style={{ color: 'var(--text-2)' }}>
                                 Bu işlemi silmek istediğinize emin misiniz?
                             </p>
-                            <p className={`mb-4 font-medium ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                            <p className="mb-4 font-medium" style={{ color: 'var(--text)' }}>
                                 {deleteModal.expenseName}
                             </p>
 
-                            <label className={`flex items-center justify-center gap-2 mb-6 cursor-pointer text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                            <label className="flex items-center justify-center gap-2 mb-6 cursor-pointer text-sm" style={{ color: 'var(--text-2)' }}>
                                 <input
                                     type="checkbox"
                                     checked={dontAskAgain}
                                     onChange={(e) => setDontAskAgain(e.target.checked)}
-                                    className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                                    className="w-4 h-4 rounded"
+                                    style={{ accentColor: 'var(--accent)' }}
                                 />
                                 Bir daha sorma
                             </label>
@@ -156,13 +160,15 @@ export default function Transactions() {
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setDeleteModal({ isOpen: false, expenseId: null, expenseName: '' })}
-                                    className={`flex-1 py-3 rounded-xl font-medium transition-colors ${darkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                                    className="flex-1 py-3 rounded-xl font-medium transition-colors"
+                                    style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
                                 >
                                     İptal
                                 </button>
                                 <button
                                     onClick={confirmDelete}
-                                    className="flex-1 py-3 rounded-xl font-medium text-white bg-rose-500 hover:bg-rose-600 transition-colors"
+                                    className="flex-1 py-3 rounded-xl font-medium text-white transition-colors"
+                                    style={{ background: 'var(--danger)' }}
                                 >
                                     Sil
                                 </button>
@@ -173,31 +179,38 @@ export default function Transactions() {
             )}
 
             <div className="flex flex-col sm:flex-row justify-between items-end gap-4">
-                <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>📋 Hareketler</h1>
-                <button onClick={exportToCSV} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors">
-                    📥 CSV İndir
+                <div>
+                    <h1 className="text-2xl font-bold display" style={{ color: 'var(--text)' }}>Hareketler</h1>
+                    <p className="mt-1 text-sm" style={{ color: 'var(--text-3)' }}>Tüm gelir ve giderleriniz</p>
+                </div>
+                <button
+                    onClick={exportToCSV}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                    style={{ background: 'var(--success)', boxShadow: '0 8px 22px -10px var(--success)' }}
+                >
+                    <Download size={16} /> CSV İndir
                 </button>
             </div>
 
             {/* Filters */}
-            <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+            <div className="card p-4">
                 <div className="flex flex-wrap gap-4">
                     <div className="flex-1 min-w-[140px]">
-                        <label className={`block text-xs mb-1.5 font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Başlangıç</label>
+                        <label className={labelCls} style={labelStyle}>Başlangıç</label>
                         <input type="date" value={filters.startDate} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                            className={`w-full px-3 py-2 rounded-xl text-sm border focus:ring-2 focus:ring-violet-500 outline-none transition-all ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                            className={fieldCls + " mono"} style={{ color: 'var(--text)' }}
                         />
                     </div>
                     <div className="flex-1 min-w-[140px]">
-                        <label className={`block text-xs mb-1.5 font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Bitiş</label>
+                        <label className={labelCls} style={labelStyle}>Bitiş</label>
                         <input type="date" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                            className={`w-full px-3 py-2 rounded-xl text-sm border focus:ring-2 focus:ring-violet-500 outline-none transition-all ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                            className={fieldCls + " mono"} style={{ color: 'var(--text)' }}
                         />
                     </div>
                     <div className="flex-1 min-w-[140px]">
-                        <label className={`block text-xs mb-1.5 font-medium ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tür</label>
+                        <label className={labelCls} style={labelStyle}>Tür</label>
                         <select value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                            className={`w-full px-3 py-2 rounded-xl text-sm border focus:ring-2 focus:ring-violet-500 outline-none transition-all ${darkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+                            className={fieldCls} style={{ color: 'var(--text)' }}
                         >
                             <option value="all">Tümü</option>
                             <option value="Gelir">Gelirler</option>
@@ -208,52 +221,56 @@ export default function Transactions() {
             </div>
 
             {/* Table */}
-            <div className={`rounded-2xl border overflow-hidden ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+            <div className="card overflow-hidden" style={{ padding: 0 }}>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                        <thead className={darkMode ? 'bg-slate-800/50' : 'bg-slate-50'}>
+                        <thead style={{ background: 'var(--surface-2)' }}>
                             <tr>
-                                <th className={`px-6 py-4 text-xs font-semibold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>TARİH</th>
-                                <th className={`px-6 py-4 text-xs font-semibold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>KATEGORİ</th>
-                                <th className={`px-6 py-4 text-xs font-semibold hidden sm:table-cell ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>AÇIKLAMA</th>
-                                <th className={`px-6 py-4 text-xs font-semibold text-right ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>TUTAR</th>
-                                <th className={`px-6 py-4 text-xs font-semibold text-center ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>İŞLEM</th>
+                                <th className={thCls} style={{ color: 'var(--text-3)' }}>Tarih</th>
+                                <th className={thCls} style={{ color: 'var(--text-3)' }}>Kategori</th>
+                                <th className={thCls + " hidden sm:table-cell"} style={{ color: 'var(--text-3)' }}>Açıklama</th>
+                                <th className={thCls + " text-right"} style={{ color: 'var(--text-3)' }}>Tutar</th>
+                                <th className={thCls + " text-center"} style={{ color: 'var(--text-3)' }}>İşlem</th>
                             </tr>
                         </thead>
-                        <tbody className={`divide-y ${darkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
+                        <tbody>
                             {loading ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-slate-500">Yükleniyor...</td></tr>
+                                <tr><td colSpan="5" className="p-8 text-center" style={{ color: 'var(--text-3)' }}>Yükleniyor...</td></tr>
                             ) : expenses.length === 0 ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-slate-500">Kayıt bulunamadı.</td></tr>
+                                <tr><td colSpan="5" className="p-8 text-center" style={{ color: 'var(--text-3)' }}>Kayıt bulunamadı.</td></tr>
                             ) : (
-                                expenses.map(e => (
-                                    <tr key={e.id} className={`transition-colors ${darkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50'}`}>
-                                        <td className={`px-6 py-4 text-sm ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{formatDate(e.date)}</td>
+                                expenses.map(e => {
+                                    const isIncome = e.category_type === 'Gelir'
+                                    const tone = isIncome ? 'var(--success)' : 'var(--danger)'
+                                    return (
+                                    <tr key={e.id} className="transition-colors row-hover" style={{ borderTop: '1px solid var(--border)' }}>
+                                        <td className="px-6 py-4 text-sm mono" style={{ color: 'var(--text-2)' }}>{formatDate(e.date)}</td>
                                         <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${e.category_type === 'Gelir'
-                                                ? 'bg-emerald-500/10 text-emerald-500'
-                                                : 'bg-rose-500/10 text-rose-500'
-                                                }`}>
-                                                {e.category_type === 'Gelir' ? '↗' : '↘'} {e.category_name}
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                                                style={{ background: `color-mix(in oklab, ${tone} 12%, transparent)`, color: tone }}>
+                                                {isIncome ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />} {e.category_name}
                                             </span>
                                         </td>
-                                        <td className={`px-6 py-4 text-sm hidden sm:table-cell ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>{e.description || '-'}</td>
-                                        <td className={`px-6 py-4 text-sm font-bold text-right ${e.category_type === 'Gelir' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                            {e.category_type === 'Gelir' ? '+' : '-'}{formatMoney(e.amount)}
+                                        <td className="px-6 py-4 text-sm hidden sm:table-cell" style={{ color: 'var(--text-3)' }}>{e.description || '-'}</td>
+                                        <td className="px-6 py-4 text-sm font-bold text-right mono" style={{ color: tone }}>
+                                            {isIncome ? '+' : '-'}{formatMoney(e.amount)}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <button
                                                 onClick={() => initiateDelete(e)}
                                                 disabled={deleting === e.id}
-                                                className={`p-2 rounded-lg transition-colors ${darkMode ? 'hover:bg-rose-500/20 text-rose-500' : 'hover:bg-rose-100 text-rose-600'}`}
+                                                className="p-2 rounded-lg transition-colors inline-flex items-center justify-center"
+                                                style={{ color: 'var(--danger)' }}
+                                                title="Sil"
                                             >
                                                 {deleting === e.id ? (
-                                                    <span className="w-4 h-4 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin inline-block" />
-                                                ) : '🗑️'}
+                                                    <span className="w-4 h-4 border-2 rounded-full animate-spin inline-block" style={{ borderColor: 'color-mix(in oklab, var(--danger) 30%, transparent)', borderTopColor: 'var(--danger)' }} />
+                                                ) : <Trash2 size={16} />}
                                             </button>
                                         </td>
                                     </tr>
-                                ))
+                                    )
+                                })
                             )}
                         </tbody>
                     </table>

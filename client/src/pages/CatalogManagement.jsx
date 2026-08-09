@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useOutletContext, Navigate } from 'react-router-dom'
-import { Shield, Save, Loader2, CheckCircle2, AlertTriangle, Package, Plus, Trash2, X } from 'lucide-react'
-
-const API_URL = 'http://localhost:5000/api'
+import { Navigate } from 'react-router-dom'
+import { Shield, Save, Loader2, CheckCircle2, AlertTriangle, Package, Plus, Trash2, X, Send } from 'lucide-react'
+import { API_URL } from '../config'
 
 export default function CatalogManagement() {
     const { authFetch, user } = useAuth()
-    const { darkMode } = useOutletContext()
     const [catalog, setCatalog] = useState({})
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState({})
@@ -30,14 +28,14 @@ export default function CatalogManagement() {
         planAmount: ''
     })
 
+    useEffect(() => {
+        fetchCatalog()
+    }, [])
+
     // Admin değilse ana sayfaya yönlendir
     if (!user?.is_admin) {
         return <Navigate to="/" replace />
     }
-
-    useEffect(() => {
-        fetchCatalog()
-    }, [])
 
     const fetchCatalog = async () => {
         try {
@@ -211,10 +209,9 @@ export default function CatalogManagement() {
         setSaving(prev => ({ ...prev, [`del-svc-${serviceKey}`]: false }))
     }
 
-    const inputClass = `w-full h-10 px-3 rounded-lg text-sm font-medium outline-none transition-all ${darkMode
-        ? 'bg-black/50 border-white/10 focus:border-indigo-500 text-white'
-        : 'bg-slate-50 border-slate-200 focus:border-indigo-500 text-slate-900'
-        } border`
+    const inputClass = "w-full h-10 px-3 rounded-lg text-sm font-medium outline-none transition-all field"
+    const labelClass = "block text-[10px] uppercase tracking-[0.12em] mono font-medium mb-1"
+    const labelStyle = { color: 'var(--text-3)' }
 
     const testTelegram = async () => {
         setSaving(prev => ({ ...prev, 'test-telegram': true }))
@@ -235,24 +232,24 @@ export default function CatalogManagement() {
     if (loading) {
         return (
             <div className="flex items-center justify-center py-20">
-                <Loader2 className="animate-spin text-indigo-500" size={40} />
+                <Loader2 className="animate-spin" size={40} style={{ color: 'var(--accent)' }} />
             </div>
         )
     }
 
     return (
-        <div className="space-y-8">
+        <div className="px-8 py-6 space-y-8 rise-stagger" style={{ maxWidth: 1480, margin: '0 auto' }}>
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-2xl ${darkMode ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                    <div className="p-3 rounded-2xl" style={{ background: 'color-mix(in oklab, var(--warning) 14%, transparent)', color: 'var(--warning)' }}>
                         <Shield size={28} />
                     </div>
                     <div>
-                        <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                        <h1 className="text-2xl font-bold display" style={{ color: 'var(--text)' }}>
                             Katalog Yönetimi
                         </h1>
-                        <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>
+                        <p className="text-sm" style={{ color: 'var(--text-3)' }}>
                             Servis ve planları yönetin, yeni abonelikler ekleyin
                         </p>
                     </div>
@@ -261,20 +258,18 @@ export default function CatalogManagement() {
                     <button
                         onClick={testTelegram}
                         disabled={saving['test-telegram']}
-                        className={`hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all border ${darkMode
-                            ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 hover:bg-sky-500/20'
-                            : 'bg-sky-50 text-sky-600 border-sky-200 hover:bg-sky-100'
-                            }`}
+                        className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all border disabled:opacity-50"
+                        style={{ background: 'color-mix(in oklab, #38BDF8 12%, transparent)', color: '#38BDF8', borderColor: 'color-mix(in oklab, #38BDF8 25%, transparent)' }}
                     >
-                        {saving['test-telegram'] ? <Loader2 className="animate-spin" size={18} /> : <span>✈️</span>}
+                        {saving['test-telegram'] ? <Loader2 className="animate-spin" size={18} /> : <Send size={16} />}
                         Telegram Test
                     </button>
                     <button
                         onClick={() => setShowAddService(!showAddService)}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${showAddService
-                            ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/25'
-                            }`}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all text-white"
+                        style={showAddService
+                            ? { background: 'color-mix(in oklab, var(--danger) 14%, transparent)', color: 'var(--danger)' }
+                            : { background: 'var(--accent)', boxShadow: '0 8px 22px -10px var(--accent)' }}
                     >
                         {showAddService ? <X size={18} /> : <Plus size={18} />}
                         {showAddService ? 'İptal' : 'Yeni Servis'}
@@ -284,83 +279,42 @@ export default function CatalogManagement() {
 
             {/* Add New Service Form */}
             {showAddService && (
-                <div className={`p-6 rounded-3xl border-2 border-dashed ${darkMode ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-indigo-300 bg-indigo-50'}`}>
-                    <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Yeni Abonelik Servisi Ekle</h3>
+                <div className="p-6 rounded-3xl border-2 border-dashed" style={{ borderColor: 'color-mix(in oklab, var(--accent) 30%, transparent)', background: 'color-mix(in oklab, var(--accent) 5%, var(--surface))' }}>
+                    <h3 className="font-bold mb-4 display" style={{ color: 'var(--text)' }}>Yeni Abonelik Servisi Ekle</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
-                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>Servis Adı *</label>
-                            <input
-                                type="text"
-                                value={newService.name}
-                                onChange={(e) => setNewService({ ...newService, name: e.target.value })}
-                                placeholder="Örn: Disney+"
-                                className={inputClass}
-                            />
+                            <label className={labelClass} style={labelStyle}>Servis Adı *</label>
+                            <input type="text" value={newService.name} onChange={(e) => setNewService({ ...newService, name: e.target.value })} placeholder="Örn: Disney+" className={inputClass} style={{ color: 'var(--text)' }} />
                         </div>
                         <div>
-                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>Domain</label>
-                            <input
-                                type="text"
-                                value={newService.domain}
-                                onChange={(e) => setNewService({ ...newService, domain: e.target.value })}
-                                placeholder="Örn: disneyplus.com"
-                                className={inputClass}
-                            />
+                            <label className={labelClass} style={labelStyle}>Domain</label>
+                            <input type="text" value={newService.domain} onChange={(e) => setNewService({ ...newService, domain: e.target.value })} placeholder="Örn: disneyplus.com" className={inputClass} style={{ color: 'var(--text)' }} />
                         </div>
                         <div>
-                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>Marka Rengi</label>
+                            <label className={labelClass} style={labelStyle}>Marka Rengi</label>
                             <div className="flex gap-2">
-                                <input
-                                    type="color"
-                                    value={newService.brandColor}
-                                    onChange={(e) => setNewService({ ...newService, brandColor: e.target.value })}
-                                    className="w-10 h-10 rounded-lg cursor-pointer border-0"
-                                />
-                                <input
-                                    type="text"
-                                    value={newService.brandColor}
-                                    onChange={(e) => setNewService({ ...newService, brandColor: e.target.value })}
-                                    className={inputClass}
-                                />
+                                <input type="color" value={newService.brandColor} onChange={(e) => setNewService({ ...newService, brandColor: e.target.value })} className="w-10 h-10 rounded-lg cursor-pointer border-0 shrink-0" />
+                                <input type="text" value={newService.brandColor} onChange={(e) => setNewService({ ...newService, brandColor: e.target.value })} className={inputClass} style={{ color: 'var(--text)' }} />
                             </div>
                         </div>
                         <div>
-                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>Logo URL (Opsiyonel)</label>
-                            <input
-                                type="text"
-                                value={newService.logoUrl}
-                                onChange={(e) => setNewService({ ...newService, logoUrl: e.target.value })}
-                                placeholder="https://..."
-                                className={inputClass}
-                            />
+                            <label className={labelClass} style={labelStyle}>Logo URL (Opsiyonel)</label>
+                            <input type="text" value={newService.logoUrl} onChange={(e) => setNewService({ ...newService, logoUrl: e.target.value })} placeholder="https://..." className={inputClass} style={{ color: 'var(--text)' }} />
                         </div>
                         <div>
-                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>İlk Plan Adı *</label>
-                            <input
-                                type="text"
-                                value={newService.planName}
-                                onChange={(e) => setNewService({ ...newService, planName: e.target.value })}
-                                placeholder="Örn: Aylık"
-                                className={inputClass}
-                            />
+                            <label className={labelClass} style={labelStyle}>İlk Plan Adı *</label>
+                            <input type="text" value={newService.planName} onChange={(e) => setNewService({ ...newService, planName: e.target.value })} placeholder="Örn: Aylık" className={inputClass} style={{ color: 'var(--text)' }} />
                         </div>
                         <div>
-                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>İlk Plan Fiyatı (TL) *</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                value={newService.planAmount}
-                                onChange={(e) => setNewService({ ...newService, planAmount: e.target.value })}
-                                placeholder="0.00"
-                                className={inputClass}
-                            />
+                            <label className={labelClass} style={labelStyle}>İlk Plan Fiyatı (TL) *</label>
+                            <input type="number" step="0.01" value={newService.planAmount} onChange={(e) => setNewService({ ...newService, planAmount: e.target.value })} placeholder="0.00" className={inputClass + " mono"} style={{ color: 'var(--text)' }} />
                         </div>
                     </div>
                     <div className="mt-4 flex justify-end">
                         <button
                             onClick={addNewService}
                             disabled={saving['add-service'] || !newService.name.trim() || !newService.planName.trim() || !newService.planAmount}
-                            className="h-10 px-6 rounded-xl font-medium text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-indigo-500/25"
+                            className="h-10 px-6 rounded-xl font-medium text-white btn-primary active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
                         >
                             {saving['add-service'] ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                             Servisi Ekle
@@ -371,35 +325,35 @@ export default function CatalogManagement() {
 
             {/* Notifications */}
             {success && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'color-mix(in oklab, var(--success) 10%, transparent)', border: '1px solid color-mix(in oklab, var(--success) 25%, transparent)', color: 'var(--success)' }}>
                     <CheckCircle2 size={20} />
                     <span className="text-sm font-medium">{success}</span>
                 </div>
             )}
             {error && (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'color-mix(in oklab, var(--danger) 10%, transparent)', border: '1px solid color-mix(in oklab, var(--danger) 25%, transparent)', color: 'var(--danger)' }}>
                     <AlertTriangle size={20} />
                     <span className="text-sm font-medium">{error}</span>
                 </div>
             )}
 
             {/* Catalog Table */}
-            <div className={`rounded-3xl border overflow-hidden ${darkMode ? 'bg-[#161616] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
-                <div className={`px-6 py-4 border-b ${darkMode ? 'border-white/5 bg-white/[0.02]' : 'border-slate-100 bg-slate-50'}`}>
+            <div className="card overflow-hidden" style={{ padding: 0 }}>
+                <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
                     <div className="flex items-center gap-3">
-                        <Package size={20} className={darkMode ? 'text-indigo-400' : 'text-indigo-600'} />
-                        <span className={`font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Abonelik Planları</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${darkMode ? 'bg-white/5 text-zinc-400' : 'bg-slate-100 text-slate-500'}`}>
+                        <Package size={20} style={{ color: 'var(--accent)' }} />
+                        <span className="font-bold" style={{ color: 'var(--text)' }}>Abonelik Planları</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--surface)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
                             {Object.keys(catalog).length} Servis
                         </span>
                     </div>
                 </div>
 
-                <div className="divide-y divide-white/5">
+                <div>
                     {Object.entries(catalog).map(([key, service]) => (
-                        <div key={key} className={`p-6 ${darkMode ? 'hover:bg-white/[0.02]' : 'hover:bg-slate-50'} transition-colors`}>
+                        <div key={key} className="p-6 transition-colors" style={{ borderTop: '1px solid var(--border)' }}>
                             {/* Service Header */}
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                                 <div className="flex items-center gap-3">
                                     <div
                                         className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm"
@@ -408,8 +362,8 @@ export default function CatalogManagement() {
                                         {service.name.charAt(0)}
                                     </div>
                                     <div>
-                                        <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>{service.name}</h3>
-                                        <p className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>{service.domain}</p>
+                                        <h3 className="font-bold" style={{ color: 'var(--text)' }}>{service.name}</h3>
+                                        <p className="text-xs" style={{ color: 'var(--text-3)' }}>{service.domain}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -419,10 +373,10 @@ export default function CatalogManagement() {
                                             setNewPlanName('')
                                             setNewPlanAmount('')
                                         }}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${addingPlan === key
-                                            ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
-                                            : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                                            }`}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all"
+                                        style={addingPlan === key
+                                            ? { background: 'color-mix(in oklab, var(--danger) 12%, transparent)', color: 'var(--danger)' }
+                                            : { background: 'color-mix(in oklab, var(--success) 12%, transparent)', color: 'var(--success)' }}
                                     >
                                         {addingPlan === key ? <X size={16} /> : <Plus size={16} />}
                                         {addingPlan === key ? 'İptal' : 'Yeni Plan'}
@@ -430,7 +384,8 @@ export default function CatalogManagement() {
                                     <button
                                         onClick={() => deleteService(key)}
                                         disabled={saving[`del-svc-${key}`]}
-                                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                        style={{ background: 'color-mix(in oklab, var(--danger) 12%, transparent)', color: 'var(--danger)' }}
                                         title="Servisi Sil"
                                     >
                                         {saving[`del-svc-${key}`] ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}
@@ -440,34 +395,22 @@ export default function CatalogManagement() {
 
                             {/* Add New Plan Form */}
                             {addingPlan === key && (
-                                <div className={`mb-4 p-4 rounded-xl border-2 border-dashed ${darkMode ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-emerald-300 bg-emerald-50'}`}>
+                                <div className="mb-4 p-4 rounded-xl border-2 border-dashed" style={{ borderColor: 'color-mix(in oklab, var(--success) 30%, transparent)', background: 'color-mix(in oklab, var(--success) 5%, var(--surface))' }}>
                                     <div className="flex flex-col md:flex-row gap-3">
                                         <div className="flex-1">
-                                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>Plan Adı</label>
-                                            <input
-                                                type="text"
-                                                value={newPlanName}
-                                                onChange={(e) => setNewPlanName(e.target.value)}
-                                                placeholder="Örn: Premium, Aile, Öğrenci"
-                                                className={inputClass}
-                                            />
+                                            <label className={labelClass} style={labelStyle}>Plan Adı</label>
+                                            <input type="text" value={newPlanName} onChange={(e) => setNewPlanName(e.target.value)} placeholder="Örn: Premium, Aile, Öğrenci" className={inputClass} style={{ color: 'var(--text)' }} />
                                         </div>
                                         <div className="w-full md:w-40">
-                                            <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>Fiyat (TL)</label>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={newPlanAmount}
-                                                onChange={(e) => setNewPlanAmount(e.target.value)}
-                                                placeholder="0.00"
-                                                className={inputClass}
-                                            />
+                                            <label className={labelClass} style={labelStyle}>Fiyat (TL)</label>
+                                            <input type="number" step="0.01" value={newPlanAmount} onChange={(e) => setNewPlanAmount(e.target.value)} placeholder="0.00" className={inputClass + " mono"} style={{ color: 'var(--text)' }} />
                                         </div>
                                         <div className="flex items-end">
                                             <button
                                                 onClick={() => addNewPlan(key)}
                                                 disabled={saving[`add-${key}`] || !newPlanName.trim() || !newPlanAmount}
-                                                className="h-10 px-6 rounded-lg font-medium text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
+                                                className="h-10 px-6 rounded-lg font-medium text-white active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
+                                                style={{ background: 'var(--success)' }}
                                             >
                                                 {saving[`add-${key}`] ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                                                 Ekle
@@ -485,31 +428,17 @@ export default function CatalogManagement() {
                                     const isDeleting = saving[`del-${plan.id}`]
 
                                     return (
-                                        <div
-                                            key={plan.id}
-                                            className={`p-4 rounded-xl border ${darkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}
-                                        >
+                                        <div key={plan.id} className="card-2 p-4">
                                             {/* Plan Name Input */}
                                             <div className="mb-3">
-                                                <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Plan Adı</label>
-                                                <input
-                                                    type="text"
-                                                    value={plan.name}
-                                                    onChange={(e) => handleFieldChange(key, plan.id, 'name', e.target.value)}
-                                                    className={inputClass}
-                                                />
+                                                <label className={labelClass} style={labelStyle}>Plan Adı</label>
+                                                <input type="text" value={plan.name} onChange={(e) => handleFieldChange(key, plan.id, 'name', e.target.value)} className={inputClass} style={{ color: 'var(--text)' }} />
                                             </div>
 
                                             {/* Price Input */}
                                             <div className="mb-3">
-                                                <label className={`block text-xs font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Fiyat (TL)</label>
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    value={plan.amount}
-                                                    onChange={(e) => handleFieldChange(key, plan.id, 'amount', e.target.value)}
-                                                    className={inputClass}
-                                                />
+                                                <label className={labelClass} style={labelStyle}>Fiyat (TL)</label>
+                                                <input type="number" step="0.01" value={plan.amount} onChange={(e) => handleFieldChange(key, plan.id, 'amount', e.target.value)} className={inputClass + " mono"} style={{ color: 'var(--text)' }} />
                                             </div>
 
                                             {/* Action Buttons */}
@@ -517,7 +446,7 @@ export default function CatalogManagement() {
                                                 <button
                                                     onClick={() => updatePlan(key, plan.id)}
                                                     disabled={isSaving}
-                                                    className="flex-1 h-9 rounded-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
+                                                    className="flex-1 h-9 rounded-lg font-medium text-white btn-primary active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
                                                 >
                                                     {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
                                                     Kaydet
@@ -525,7 +454,8 @@ export default function CatalogManagement() {
                                                 <button
                                                     onClick={() => deletePlan(key, plan.id)}
                                                     disabled={isDeleting || service.plans.length <= 1}
-                                                    className="h-9 px-3 rounded-lg font-medium text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 transition-all flex items-center justify-center disabled:opacity-30"
+                                                    className="h-9 px-3 rounded-lg font-medium active:scale-95 transition-all flex items-center justify-center disabled:opacity-30"
+                                                    style={{ background: 'color-mix(in oklab, var(--danger) 12%, transparent)', color: 'var(--danger)' }}
                                                     title={service.plans.length <= 1 ? 'Son plan silinemez' : 'Planı Sil'}
                                                 >
                                                     {isDeleting ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
@@ -533,7 +463,7 @@ export default function CatalogManagement() {
                                             </div>
 
                                             {/* Plan ID Badge */}
-                                            <div className={`mt-2 text-center text-xs px-2 py-1 rounded-full ${darkMode ? 'bg-white/5 text-zinc-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            <div className="mt-2 text-center text-xs px-2 py-1 rounded-full mono" style={{ background: 'var(--surface)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
                                                 ID: {plan.id}
                                             </div>
                                         </div>

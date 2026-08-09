@@ -40,6 +40,16 @@ const initializeDatabase = () => {
                     db.run("ALTER TABLE users ADD COLUMN notify_subscriptions INTEGER DEFAULT 1", () => { });
                     db.run("ALTER TABLE users ADD COLUMN notify_goals INTEGER DEFAULT 1", () => { });
                     db.run("ALTER TABLE users ADD COLUMN notify_weekly_summary INTEGER DEFAULT 0", () => { });
+                    // Migration: E-posta doğrulama sütunları ekle
+                    db.run("ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0", (alterErr) => {
+                        // Kolon yeni eklendiyse mevcut (eski) kullanıcıları doğrulanmış say.
+                        // Yeni kayıtlar createUser içinde açıkça is_verified=0 ile gelir.
+                        if (!alterErr) {
+                            db.run("UPDATE users SET is_verified = 1 WHERE is_verified = 0", () => { });
+                        }
+                    });
+                    db.run("ALTER TABLE users ADD COLUMN verification_code TEXT", () => { });
+                    db.run("ALTER TABLE users ADD COLUMN verification_expires DATETIME", () => { });
                 }
             });
 
@@ -160,7 +170,8 @@ const createUser = async (username, email, password) => {
     return new Promise(async (resolve, reject) => {
         try {
             const hashedPassword = await bcrypt.hash(password, 10);
-            const sql = `INSERT INTO users (username, email, password) VALUES (?, ?, ?)`;
+            // Yeni kullanıcı doğrulanmamış (is_verified=0) olarak oluşturulur.
+            const sql = `INSERT INTO users (username, email, password, is_verified) VALUES (?, ?, ?, 0)`;
 
             db.run(sql, [username, email, hashedPassword], function (err) {
                 if (err) {
@@ -204,6 +215,129 @@ const findUserById = (id) => {
 // Şifre doğrula
 const verifyPassword = async (plainPassword, hashedPassword) => {
     return bcrypt.compare(plainPassword, hashedPassword);
+};
+
+// Şifre sıfırla
+const resetPassword = async (email, newPassword) => {
+    const hashed = await bcrypt.hash(newPassword, 10);
+    return new Promise((resolve, reject) => {
+        db.run('UPDATE users SET password = ? WHERE email = ?', [hashed, email], function(err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+        });
+    });
+};
+
+// ==================== E-POSTA DOĞRULAMA FONKSİYONLARI ====================
+// Kayıt doğrulama ve şifre sıfırlama, aynı verification_code/verification_expires
+// alanlarını kullanır (aynı anda yalnızca bir akış çalışır).
+
+// Bir kullanıcı için doğrulama kodu + son kullanma zamanı kaydet (userId ile)
+const setVerificationCode = (userId, code, expires) => {
+    return new Promise((resolve, reject) => {
+        const sql = `UPDATE users SET verification_code = ?, verification_expires = ? WHERE id = ?`;
+        db.run(sql, [code, expires, userId], function (err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+        });
+    });
+};
+
+// E-posta için doğrulama kodu kaydet (email ile — şifre sıfırlamada kullanılır)
+const setResetCode = (email, code, expires) => {
+    return new Promise((resolve, reject) => {
+        const sql = `UPDATE users SET verification_code = ?, verification_expires = ? WHERE email = ?`;
+        db.run(sql, [code, expires, email], function (err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+        });
+    });
+};
+
+// Kayıt doğrulama kodunu kontrol et; geçerliyse hesabı doğrula (is_verified=1) ve kodu temizle
+const verifyEmailCode = (email, code) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date().toISOString();
+        const sql = `SELECT id, username, email FROM users
+                     WHERE email = ? AND verification_code = ? AND verification_expires > ?`;
+        db.get(sql, [email, code.trim(), now], (err, user) => {
+            if (err) return reject(err);
+            if (!user) return resolve({ success: false, error: 'Geçersiz veya süresi dolmuş kod' });
+
+            const updateSql = `UPDATE users SET is_verified = 1, verification_code = NULL, verification_expires = NULL WHERE id = ?`;
+            db.run(updateSql, [user.id], function (uErr) {
+                if (uErr) reject(uErr);
+                else resolve({ success: true, user: { id: user.id, username: user.username, email: user.email } });
+            });
+        });
+    });
+};
+
+// Şifre sıfırlama kodunu doğrula; geçerliyse yeni şifreyi kaydet ve kodu temizle
+const verifyResetCodeAndUpdatePassword = async (email, code, newPassword) => {
+    const user = await new Promise((resolve, reject) => {
+        const now = new Date().toISOString();
+        const sql = `SELECT id FROM users
+                     WHERE email = ? AND verification_code = ? AND verification_expires > ?`;
+        db.get(sql, [email, code.trim(), now], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+
+    if (!user) {
+        return { success: false, error: 'Geçersiz veya süresi dolmuş kod' };
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    return new Promise((resolve, reject) => {
+        const sql = `UPDATE users SET password = ?, verification_code = NULL, verification_expires = NULL WHERE id = ?`;
+        db.run(sql, [hashed, user.id], function (err) {
+            if (err) reject(err);
+            else resolve({ success: true });
+        });
+    });
+};
+
+// Şifre değiştir (mevcut şifreyi doğrulayarak) — oturum açmış kullanıcı için
+const changePassword = async (userId, currentPassword, newPassword) => {
+    // Kullanıcının mevcut (hash'li) şifresini çek
+    const user = await new Promise((resolve, reject) => {
+        db.get('SELECT password FROM users WHERE id = ?', [userId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+
+    if (!user) {
+        throw new Error('Kullanıcı bulunamadı');
+    }
+
+    // Mevcut şifreyi doğrula
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+        throw new Error('Mevcut şifreniz hatalı');
+    }
+
+    // Yeni şifreyi hashle ve kaydet
+    const hashed = await bcrypt.hash(newPassword, 10);
+    return new Promise((resolve, reject) => {
+        db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, userId], function (err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+        });
+    });
+};
+
+// Tüm kullanıcıları getir (sadece admin)
+const getAllUsers = () => {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at DESC`;
+        db.all(sql, [], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
 };
 
 // ==================== CATEGORY FUNCTIONS ====================
@@ -325,6 +459,48 @@ const getBudgetStatus = (userId) => {
                 ...r,
                 percentage: r.budget_limit > 0 ? Math.round((r.spent / r.budget_limit) * 100) : 0
             })));
+        });
+    });
+};
+
+// Son 30 günün günlük gerçek gider toplamı (harcama trendi grafiği için)
+// Harcaması olmayan günler 0 ile doldurularak tam 30 günlük dizi döndürülür.
+const getDailyExpenseTrend = (userId) => {
+    return new Promise((resolve, reject) => {
+        const now = new Date();
+        const start = new Date(now);
+        start.setDate(start.getDate() - 29); // bugün dahil son 30 gün
+        const startStr = start.toISOString().split('T')[0];
+        const endStr = now.toISOString().split('T')[0];
+
+        // Sadece gider tipindeki işlemleri, güne göre topla
+        const sql = `
+            SELECT e.date as date, SUM(e.amount) as total
+            FROM expenses e
+            INNER JOIN categories c ON e.category_id = c.id
+            WHERE e.user_id = ? AND c.type = 'Gider' AND e.date BETWEEN ? AND ?
+            GROUP BY e.date
+        `;
+
+        db.all(sql, [userId, startStr, endStr], (err, rows) => {
+            if (err) return reject(err);
+
+            // Tarih -> tutar eşlemesi
+            const byDate = {};
+            (rows || []).forEach(r => { byDate[r.date] = r.total; });
+
+            // 30 günü sırayla doldur (eksik günler 0)
+            const result = [];
+            for (let i = 0; i < 30; i++) {
+                const d = new Date(start);
+                d.setDate(start.getDate() + i);
+                const key = d.toISOString().split('T')[0];
+                result.push({
+                    day: d.getDate() + '/' + (d.getMonth() + 1),
+                    amount: Math.round(byDate[key] || 0)
+                });
+            }
+            resolve(result);
         });
     });
 };
@@ -708,11 +884,19 @@ const linkTelegramAccount = (code, chatId) => {
             if (err) return reject(err);
             if (!user) return resolve({ success: false, error: 'Geçersiz veya süresi dolmuş kod' });
 
-            // Chat ID'yi kaydet ve kodu temizle
-            const updateSql = `UPDATE users SET telegram_chat_id = ?, telegram_link_code = NULL, telegram_link_expires = NULL WHERE id = ?`;
-            db.run(updateSql, [chatId.toString(), user.id], function (err) {
-                if (err) reject(err);
-                else resolve({ success: true, username: user.username });
+            // Aynı chat ID başka kullanıcılara bağlıysa önce onları temizle.
+            // Bir Telegram hesabı (chat ID) yalnızca tek bir kullanıcıya bağlı olmalı,
+            // aksi halde /bakiye gibi komutlar yanlış kullanıcının verisini gösterebilir.
+            const clearSql = `UPDATE users SET telegram_chat_id = NULL WHERE telegram_chat_id = ? AND id != ?`;
+            db.run(clearSql, [chatId.toString(), user.id], (clearErr) => {
+                if (clearErr) return reject(clearErr);
+
+                // Chat ID'yi kaydet ve kodu temizle
+                const updateSql = `UPDATE users SET telegram_chat_id = ?, telegram_link_code = NULL, telegram_link_expires = NULL WHERE id = ?`;
+                db.run(updateSql, [chatId.toString(), user.id], function (err) {
+                    if (err) reject(err);
+                    else resolve({ success: true, username: user.username });
+                });
             });
         });
     });
@@ -721,14 +905,13 @@ const linkTelegramAccount = (code, chatId) => {
 // Telegram bağlantı durumunu getir
 const getTelegramStatus = (userId) => {
     return new Promise((resolve, reject) => {
-        const sql = `SELECT telegram_chat_id, notify_subscriptions, notify_goals, notify_weekly_summary FROM users WHERE id = ?`;
+        const sql = `SELECT telegram_chat_id, notify_subscriptions, notify_weekly_summary FROM users WHERE id = ?`;
         db.get(sql, [userId], (err, row) => {
             if (err) reject(err);
             else resolve({
                 connected: !!row?.telegram_chat_id,
                 preferences: {
                     subscriptions: row?.notify_subscriptions === 1,
-                    goals: row?.notify_goals === 1,
                     weeklySummary: row?.notify_weekly_summary === 1
                 }
             });
@@ -739,10 +922,9 @@ const getTelegramStatus = (userId) => {
 // Telegram bildirim tercihlerini güncelle
 const updateTelegramPreferences = (userId, prefs) => {
     return new Promise((resolve, reject) => {
-        const sql = `UPDATE users SET notify_subscriptions = ?, notify_goals = ?, notify_weekly_summary = ? WHERE id = ?`;
+        const sql = `UPDATE users SET notify_subscriptions = ?, notify_weekly_summary = ? WHERE id = ?`;
         db.run(sql, [
             prefs.subscriptions ? 1 : 0,
-            prefs.goals ? 1 : 0,
             prefs.weeklySummary ? 1 : 0,
             userId
         ], function (err) {
@@ -769,7 +951,6 @@ const getUsersForNotification = (notificationType) => {
         let column;
         switch (notificationType) {
             case 'subscriptions': column = 'notify_subscriptions'; break;
-            case 'goals': column = 'notify_goals'; break;
             case 'weeklySummary': column = 'notify_weekly_summary'; break;
             default: return reject(new Error('Invalid notification type'));
         }
@@ -790,6 +971,14 @@ module.exports = {
     findUserByEmail,
     findUserById,
     verifyPassword,
+    getAllUsers,
+    resetPassword,
+    changePassword,
+    // E-posta doğrulama
+    setVerificationCode,
+    setResetCode,
+    verifyEmailCode,
+    verifyResetCodeAndUpdatePassword,
     // Category functions
     getAllCategories,
     addUserCategory,
@@ -814,6 +1003,7 @@ module.exports = {
     // Summary
     getMonthlySummary,
     getExpenseAnalysis,
+    getDailyExpenseTrend,
     // Telegram functions
     generateTelegramLinkCode,
     linkTelegramAccount,

@@ -1,338 +1,376 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useOutletContext } from 'react-router-dom'
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Wallet, TrendingUp, TrendingDown, CreditCard, AlertTriangle, CheckCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
+  XAxis, YAxis, CartesianGrid, Area, AreaChart
+} from 'recharts'
+import { TrendingUp, TrendingDown, CreditCard, ArrowRight } from 'lucide-react'
+import { Card, SectionTitle, Money, Badge, KpiCard, Monogram, Sparkline, fmt, fmtDate } from '../components/ui'
+import { API_URL } from '../config'
 
-const API_URL = 'http://localhost:5000/api'
-const COLORS = ['#818cf8', '#f472b6', '#fbbf24', '#34d399', '#60a5fa', '#f87171', '#a78bfa', '#2dd4bf']
+const ACCENT = '#6C63FF'
+const PIE_COLORS = [ACCENT, '#8B7BFF', '#22C55E', '#F59E0B', '#F43F5E', '#3B82F6', '#EC4899', '#94A3B8']
+
+function daysUntilBillingDay(day) {
+  const today = new Date()
+  const cur = today.getDate()
+  if (day >= cur) return day - cur
+  const next = new Date(today.getFullYear(), today.getMonth() + 1, day)
+  return Math.round((next - today) / 86400000)
+}
 
 export default function Dashboard() {
-    const { authFetch } = useAuth()
-    const { darkMode } = useOutletContext()
+  const { authFetch } = useAuth()
+  const navigate = useNavigate()
 
-    const [summary, setSummary] = useState({ total_income: 0, total_expense: 0, balance: 0 })
-    const [expenses, setExpenses] = useState([])
-    const [categories, setCategories] = useState([])
-    const [budgetStatus, setBudgetStatus] = useState([])
-    const [approachingPayments, setApproachingPayments] = useState([])
-    const [pendingSubscriptions, setPendingSubscriptions] = useState([])
-    const [pieChartData, setPieChartData] = useState([])
+  const [summary, setSummary] = useState({ total_income: 0, total_expense: 0, balance: 0 })
+  const [pieData, setPieData] = useState([])
+  const [pendingSubs, setPendingSubs] = useState([])
+  const [recentExpenses, setRecentExpenses] = useState([])
+  const [subsMonthly, setSubsMonthly] = useState(0)
+  const [trendData, setTrendData] = useState([])
 
-    useEffect(() => {
-        fetchSummary()
-        fetchChartData()
-        fetchCategories()
-        fetchBudgetStatus()
-        fetchApproachingPayments()
-        fetchExpenseAnalysis()
-    }, [])
+  useEffect(() => {
+    fetchAll()
+  }, [])
 
-    const fetchSummary = async () => {
-        try {
-            const response = await authFetch(`${API_URL}/summary`)
-            const data = await response.json()
-            if (data.success) setSummary(data.data)
-        } catch (error) { console.error(error) }
+  const fetchAll = async () => {
+    try {
+      const [summaryRes, analysisRes, pendingRes, expensesRes, subsRes, trendRes] = await Promise.all([
+        authFetch(`${API_URL}/summary`),
+        authFetch(`${API_URL}/expense-analysis`),
+        authFetch(`${API_URL}/subscriptions/pending`),
+        authFetch(`${API_URL}/expenses`),
+        authFetch(`${API_URL}/subscriptions`),
+        authFetch(`${API_URL}/expense-trend`),
+      ])
+
+      const [summaryData, analysisData, pendingData, expensesData, subsData, trendDataRes] = await Promise.all([
+        summaryRes.json(), analysisRes.json(), pendingRes.json(), expensesRes.json(), subsRes.json(), trendRes.json()
+      ])
+
+      if (summaryData.success) setSummary(summaryData.data)
+      if (analysisData.success) setPieData(analysisData.data.filter(d => d.value > 0))
+      if (trendDataRes.success) setTrendData(trendDataRes.data)
+      if (pendingData.success) {
+        const sorted = [...pendingData.data].sort((a, b) => daysUntilBillingDay(a.billing_day) - daysUntilBillingDay(b.billing_day))
+        setPendingSubs(sorted.slice(0, 4))
+      }
+      if (expensesData.success) {
+        const sorted = [...expensesData.data].sort((a, b) => b.date?.localeCompare(a.date)).slice(0, 5)
+        setRecentExpenses(sorted)
+      }
+      if (subsData.success) {
+        const total = subsData.data.reduce((a, s) => a + (s.amount || 0), 0)
+        setSubsMonthly(total)
+      }
+    } catch (err) {
+      console.error('Dashboard fetch error:', err)
     }
+  }
 
-    const fetchCategories = async () => {
-        try {
-            const response = await authFetch(`${API_URL}/categories`)
-            const data = await response.json()
-            if (data.success) setCategories(data.data)
-        } catch (error) { console.error(error) }
-    }
+  // Harcama trendi artık /api/expense-trend üzerinden gerçek veriyle gelir (fetchAll içinde)
+  const sparkValues = trendData.map(d => d.amount)
 
-    const fetchChartData = async () => {
-        try {
-            const now = new Date()
-            const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+  return (
+    <div className="px-8 py-6 space-y-6 rise-stagger" style={{ maxWidth: 1480, margin: '0 auto' }}>
 
-            const response = await authFetch(`${API_URL}/expenses?startDate=${start}&endDate=${end}`)
-            const data = await response.json()
-            if (data.success) setExpenses(data.data)
-        } catch (error) { console.error(error) }
-    }
+      {/* ── Top KPI Bento ── */}
+      <div className="grid grid-cols-12 gap-5">
 
-    const fetchBudgetStatus = async () => {
-        try {
-            const response = await authFetch(`${API_URL}/budget-status`)
-            const data = await response.json()
-            if (data.success) setBudgetStatus(data.data)
-        } catch (error) { console.error(error) }
-    }
+        {/* Balance hero */}
+        <Card
+          className="col-span-12 lg:col-span-6 relative overflow-hidden"
+          pad="p-7"
+          style={{
+            background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 18%, var(--surface)), var(--surface))'
+          }}
+        >
+          <div className="absolute -right-20 -top-20 w-72 h-72 rounded-full dotgrid opacity-30" />
+          <div className="flex items-center justify-between mb-6 relative">
+            <div className="mono text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-2)' }}>
+              net bakiye
+            </div>
+            <Badge tone={summary.balance >= 0 ? 'success' : 'danger'}>
+              {summary.balance >= 0 ? 'Pozitif' : 'Negatif'}
+            </Badge>
+          </div>
+          <div className="relative">
+            <Money value={Math.abs(summary.balance)} size={60} weight={700} glow />
+            <div className="mt-2 text-sm" style={{ color: 'var(--text-2)' }}>
+              Bu ay · gelir — gider
+            </div>
+          </div>
+          {sparkValues.length > 0 && (
+            <div className="mt-6">
+              <Sparkline data={sparkValues} w={560} h={60} color={ACCENT} />
+            </div>
+          )}
+          <div className="mt-4 grid grid-cols-2 gap-3 relative">
+            <MiniStat label="Toplam Gelir" value={summary.total_income} color="var(--success)" />
+            <MiniStat label="Toplam Gider" value={summary.total_expense} color="var(--danger)" />
+          </div>
+        </Card>
 
-    const fetchApproachingPayments = async () => {
-        try {
-            const response = await authFetch(`${API_URL}/subscriptions/pending`)
-            const data = await response.json()
-            if (data.success) {
-                // Tüm bekleyen ödemeleri grafikleriçin sakla
-                setPendingSubscriptions(data.data)
+        {/* Right column */}
+        <div className="col-span-12 lg:col-span-6 grid grid-cols-2 gap-5">
+          <KpiCard
+            icon={TrendingUp}
+            tone="success"
+            label="Bu Ay Gelir"
+            value={summary.total_income}
+            className="col-span-1"
+          />
+          <KpiCard
+            icon={TrendingDown}
+            tone="danger"
+            label="Bu Ay Gider"
+            value={summary.total_expense}
+            className="col-span-1"
+          />
 
-                // Sadece 5 gün içinde ödenecekleri filtrele (Kart için)
-                const upcoming = data.data.filter(sub => {
-                    const today = new Date().getDate()
-                    const daysLeft = sub.billing_day - today
-                    return daysLeft >= 0 && daysLeft <= 5
-                })
-                setApproachingPayments(upcoming)
+          {/* Subscriptions total */}
+          <Card className="col-span-2">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: 'color-mix(in oklab, var(--warning) 15%, transparent)', color: 'var(--warning)' }}
+                  >
+                    <CreditCard size={16} />
+                  </div>
+                  <div className="mono text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-3)' }}>
+                    aylık abonelik
+                  </div>
+                </div>
+                <Money value={subsMonthly} size={32} />
+                <div className="mt-1 text-xs" style={{ color: 'var(--text-2)' }}>
+                  {fmt(subsMonthly * 12)}/yıl
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/subscriptions')}
+                className="text-[11px] font-semibold flex items-center gap-1 mt-1"
+                style={{ color: 'var(--accent)' }}
+              >
+                Yönet <ArrowRight size={12} />
+              </button>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* ── Charts row ── */}
+      <div className="grid grid-cols-12 gap-5">
+
+        {/* Pie chart */}
+        <Card className="col-span-12 lg:col-span-8">
+          <SectionTitle
+            eyebrow="bu ay"
+            title="Kategori Dağılımı"
+            right={<Badge tone="neutral">Giderler</Badge>}
+          />
+          <div className="mt-4 grid grid-cols-2 gap-3 items-center">
+            <div style={{ height: 220 }}>
+              {pieData.length > 0 ? (
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={60}
+                      outerRadius={95}
+                      paddingAngle={3}
+                      cornerRadius={6}
+                      strokeWidth={0}
+                    >
+                      {pieData.map((_, i) => (
+                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        color: 'var(--text)'
+                      }}
+                      formatter={(v, name) => [fmt(v), name]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm" style={{ color: 'var(--text-3)' }}>
+                  Veri yok
+                </div>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {pieData.slice(0, 6).map((c, i) => {
+                const total = pieData.reduce((a, d) => a + d.value, 0)
+                const pct = total > 0 ? Math.round(c.value / total * 100) : 0
+                return (
+                  <div key={c.name} className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                    <span className="flex-1 truncate" style={{ color: 'var(--text-2)' }}>{c.name}</span>
+                    <span className="mono font-medium">%{pct}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </Card>
+
+        {/* Trend chart */}
+        <Card className="col-span-12 lg:col-span-4">
+          <SectionTitle eyebrow="son 30 gün" title="Harcama Trendi" />
+          <div style={{ height: 220 }} className="mt-3 -mx-3">
+            {trendData.length > 0 ? (
+              <ResponsiveContainer>
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="gradArea" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={ACCENT} stopOpacity={0.45} />
+                      <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} interval={5} />
+                  <YAxis hide />
+                  <CartesianGrid vertical={false} stroke="var(--border-soft)" />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, color: 'var(--text)' }}
+                    formatter={(v) => [fmt(v), 'Harcama']}
+                  />
+                  <Area type="monotone" dataKey="amount" stroke={ACCENT} strokeWidth={2.2} fill="url(#gradArea)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm" style={{ color: 'var(--text-3)' }}>
+                Veri yok
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between text-xs mt-2">
+            <span style={{ color: 'var(--text-3)' }}>Günlük ort.</span>
+            <span className="mono font-semibold">{fmt(Math.round(summary.total_expense / 30))}</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Bottom bento ── */}
+      <div className="grid grid-cols-12 gap-5">
+
+        {/* Upcoming subscriptions */}
+        <Card className="col-span-12 lg:col-span-5">
+          <SectionTitle
+            eyebrow="yaklaşan"
+            title="Abonelik Ödemeleri"
+            right={
+              <button
+                onClick={() => navigate('/subscriptions')}
+                className="text-xs font-semibold flex items-center gap-1"
+                style={{ color: 'var(--accent)' }}
+              >
+                Tümünü Gör <ArrowRight size={12} />
+              </button>
             }
-        } catch (error) { console.error(error) }
-    }
+          />
+          <div className="mt-4 space-y-2.5">
+            {pendingSubs.length === 0 ? (
+              <div className="text-sm text-center py-6" style={{ color: 'var(--text-3)' }}>Yaklaşan ödeme yok</div>
+            ) : pendingSubs.map((s) => {
+              const days = daysUntilBillingDay(s.billing_day)
+              const tone = days <= 2 ? 'danger' : days <= 5 ? 'warning' : 'neutral'
+              const initial = s.name?.charAt(0).toUpperCase() || '?'
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-3 p-3 rounded-xl"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                >
+                  <Monogram letter={initial} hue={220} size={40} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{s.name}</div>
+                    <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>her ayın {s.billing_day}. günü</div>
+                  </div>
+                  <Badge tone={tone}>{days === 0 ? 'Bugün' : days + ' gün'}</Badge>
+                  <div className="mono text-sm font-semibold w-24 text-right" style={{ color: 'var(--text)' }}>
+                    {fmt(s.amount)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
 
-    const fetchExpenseAnalysis = async () => {
-        try {
-            const response = await authFetch(`${API_URL}/expense-analysis`)
-            const data = await response.json()
-            if (data.success) {
-                // Filter out zero values and format for chart
-                setPieChartData(data.data.filter(item => item.value > 0))
+        {/* Recent transactions */}
+        <Card className="col-span-12 lg:col-span-7">
+          <SectionTitle
+            eyebrow="son hareketler"
+            title="Son İşlemler"
+            right={
+              <button
+                onClick={() => navigate('/transactions')}
+                className="text-xs font-semibold flex items-center gap-1"
+                style={{ color: 'var(--accent)' }}
+              >
+                Tüm İşlemler <ArrowRight size={12} />
+              </button>
             }
-        } catch (error) { console.error(error) }
-    }
-
-    const formatMoney = (a) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(a)
-
-    // Chart Prep    
-    // pieChartData is now fetched from API
-
-    const barChartData = [
-        { name: 'Gelir', value: summary.total_income, fill: '#34d399' },
-        { name: 'Gider', value: summary.total_expense, fill: '#f87171' }
-    ]
-
-    const activeBudgets = budgetStatus.filter(b => b.budget_limit > 0)
-
-    const getProgressColor = (percentage) => {
-        if (percentage >= 100) return 'bg-rose-500'
-        if (percentage >= 80) return 'bg-amber-500'
-        return 'bg-emerald-500'
-    }
-
-    const getProgressBg = (percentage) => {
-        if (percentage >= 100) return 'bg-rose-500/10'
-        if (percentage >= 80) return 'bg-amber-500/10'
-        return 'bg-emerald-500/10'
-    }
-
-    // Common card styles
-    const cardClass = `p-6 rounded-3xl border transition-all duration-300 ${darkMode ? 'bg-[#161616] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`
-    const iconBoxClass = (color) => `w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${color}`
-
-    return (
-        <div className="space-y-6">
-            <h1 className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Bu Ay</h1>
-
-            {/* Bento Grid Layout */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-                {/* Summary Cards */}
-                <div className={`${cardClass} group hover:border-indigo-500/20`}>
-                    <div className={iconBoxClass(darkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600')}>
-                        <TrendingUp size={24} />
-                    </div>
-                    <div className={`text-sm font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Toplam Gelir</div>
-                    <div className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                        {formatMoney(summary.total_income)}
-                    </div>
+          />
+          <div className="mt-4 divide-y" style={{ borderColor: 'var(--border)' }}>
+            {recentExpenses.length === 0 ? (
+              <div className="text-sm text-center py-6" style={{ color: 'var(--text-3)' }}>Henüz işlem yok</div>
+            ) : recentExpenses.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 py-3">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0"
+                  style={{
+                    background: t.type === 'income'
+                      ? 'color-mix(in oklab, var(--success) 15%, transparent)'
+                      : 'color-mix(in oklab, var(--accent) 15%, transparent)',
+                    color: t.type === 'income' ? 'var(--success)' : 'var(--accent)',
+                    border: '1px solid ' + (t.type === 'income'
+                      ? 'color-mix(in oklab, var(--success) 30%, transparent)'
+                      : 'color-mix(in oklab, var(--accent) 30%, transparent)')
+                  }}
+                >
+                  {t.category_name?.charAt(0).toUpperCase() || (t.type === 'income' ? '↑' : '↓')}
                 </div>
-
-                <div className={`${cardClass} group hover:border-rose-500/20`}>
-                    <div className={iconBoxClass(darkMode ? 'bg-rose-500/10 text-rose-400' : 'bg-rose-50 text-rose-600')}>
-                        <TrendingDown size={24} />
-                    </div>
-                    <div className={`text-sm font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Toplam Gider</div>
-                    <div className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                        {formatMoney(summary.total_expense)}
-                    </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{t.description}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    {t.category_name} · {t.date ? fmtDate(t.date) : ''}
+                  </div>
                 </div>
-
-                <div className={`${cardClass} group hover:border-emerald-500/20`}>
-                    <div className={iconBoxClass(darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600')}>
-                        <Wallet size={24} />
-                    </div>
-                    <div className={`text-sm font-medium mb-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Net Bakiye</div>
-                    <div className={`text-3xl font-bold tracking-tight ${summary.balance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {formatMoney(summary.balance)}
-                    </div>
+                <div
+                  className="mono text-sm font-semibold tabular"
+                  style={{ color: t.type === 'income' ? 'var(--success)' : 'var(--text)' }}
+                >
+                  {t.type === 'income' ? '+' : '−'} {fmt(t.amount)}
                 </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  )
+}
 
-                {/* Charts Area - Bento Grid Span */}
-                <div className={`${cardClass} md:col-span-2 min-h-[400px]`}>
-                    <div className="flex items-center justify-between mb-8">
-                        <div>
-                            <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Harcama Analizi</h2>
-                            <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Kategorilere göre gider dağılımı</p>
-                        </div>
-                        <div className={`p-2 rounded-xl ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
-                            <CreditCard size={20} className={darkMode ? 'text-zinc-400' : 'text-slate-500'} />
-                        </div>
-                    </div>
-
-                    <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={pieChartData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={80}
-                                    outerRadius={100}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                    nameKey="name"
-                                    cornerRadius={6}
-                                >
-                                    {pieChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: darkMode ? '#18181b' : '#fff',
-                                        borderRadius: '16px',
-                                        border: darkMode ? '1px solid #27272a' : '1px solid #e4e4e7',
-                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                                    }}
-                                    itemStyle={{ color: darkMode ? '#fff' : '#000' }}
-                                    formatter={(value) => [formatMoney(value), 'Tutar']}
-                                />
-                                <Legend iconType="circle" />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Upcoming Payments - Bento Grid Span */}
-                {approachingPayments.length > 0 && (
-                    <div className={`${cardClass} md:col-span-1`}>
-                        <div className="flex items-center justify-between mb-6">
-                            <div>
-                                <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Yaklaşan Ödemeler</h2>
-                                <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>5 gün içinde ödenecekler</p>
-                            </div>
-                            <div className={`p-2 rounded-xl ${darkMode ? 'bg-amber-500/10 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
-                                <AlertTriangle size={20} />
-                            </div>
-                        </div>
-                        <div className="space-y-4">
-                            {approachingPayments.map(sub => {
-                                const today = new Date().getDate()
-                                const daysLeft = sub.billing_day - today
-                                return (
-                                    <div key={sub.id} className={`flex items-center justify-between p-4 rounded-2xl border ${darkMode ? 'bg-zinc-800/50 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`p-2 rounded-xl ${darkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
-                                                <CreditCard size={18} />
-                                            </div>
-                                            <div>
-                                                <div className={`font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>{sub.name}</div>
-                                                <div className={`text-xs font-medium ${darkMode ? 'text-amber-500' : 'text-amber-600'}`}>
-                                                    {daysLeft === 0 ? 'Bugün ödeniyor' : `${daysLeft} gün kaldı`}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className={`font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                            {formatMoney(sub.amount)}
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                <div className={`${cardClass} min-h-[400px]`}>
-                    <div className="flex items-center justify-between mb-8">
-                        <div>
-                            <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Gelir / Gider</h2>
-                            <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Finansal denge özeti</p>
-                        </div>
-                    </div>
-                    <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={barChartData} barSize={40}>
-                                <XAxis
-                                    dataKey="name"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    stroke={darkMode ? '#52525b' : '#94a3b8'}
-                                    dy={10}
-                                />
-                                <Tooltip
-                                    cursor={{ fill: darkMode ? '#27272a' : '#f4f4f5', radius: 8 }}
-                                    contentStyle={{
-                                        backgroundColor: darkMode ? '#18181b' : '#fff',
-                                        borderRadius: '16px',
-                                        border: darkMode ? '1px solid #27272a' : '1px solid #e4e4e7',
-                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                                    }}
-                                    itemStyle={{ color: darkMode ? '#fff' : '#000' }}
-                                    formatter={(value) => [formatMoney(value), 'Tutar']}
-                                />
-                                <Bar dataKey="value" name="Tutar" radius={[8, 8, 8, 8]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Budget Status - Full Width */}
-                {activeBudgets.length > 0 && (
-                    <div className={`${cardClass} md:col-span-3`}>
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className={`p-2 rounded-xl ${darkMode ? 'bg-amber-500/10 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
-                                <AlertTriangle size={20} />
-                            </div>
-                            <div>
-                                <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Bütçe Hedefleri</h2>
-                                <p className={`text-sm ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Aylık harcama limitleri</p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {activeBudgets.map(budget => (
-                                <div key={budget.id} className={`p-4 rounded-2xl border ${darkMode ? 'bg-[#0a0a0a] border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <span className={`font-semibold ${darkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                                            {budget.name}
-                                        </span>
-                                        <span className={`text-xs font-mono px-2 py-1 rounded-lg ${darkMode ? 'bg-white/5 text-zinc-400' : 'bg-white border text-slate-500'}`}>
-                                            {formatMoney(budget.spent)} / {formatMoney(budget.budget_limit)}
-                                        </span>
-                                    </div>
-
-                                    <div className="relative h-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
-                                        <div
-                                            className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${getProgressColor(budget.percentage)}`}
-                                            style={{ width: `${Math.min(budget.percentage, 100)}%` }}
-                                        />
-                                    </div>
-
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span className={`font-bold ${budget.percentage >= 100 ? 'text-rose-500' :
-                                            budget.percentage >= 80 ? 'text-amber-500' :
-                                                'text-emerald-500'
-                                            }`}>
-                                            {budget.percentage}% Kullanıldı
-                                        </span>
-
-                                        {budget.percentage >= 100 ? (
-                                            <span className="flex items-center gap-1 text-rose-500 font-medium">
-                                                <AlertTriangle size={12} /> Limit Aşıldı
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-1 text-emerald-500 font-medium">
-                                                <CheckCircle size={12} /> İyi Durumda
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div >
-        </div >
-    )
+function MiniStat({ label, value, color }) {
+  return (
+    <div
+      className="p-3 rounded-xl"
+      style={{ background: 'color-mix(in oklab, var(--surface-2) 60%, transparent)', border: '1px solid var(--border)' }}
+    >
+      <div className="mono text-[10px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-3)' }}>{label}</div>
+      <div className="mono font-semibold text-[15px] tabular mt-1" style={{ color: color || 'var(--text)' }}>
+        {fmt(value)}
+      </div>
+    </div>
+  )
 }

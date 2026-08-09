@@ -34,3 +34,13 @@ npm-debug.log*
 
 # Agent/AI files
 .agent/
+.claude/settings.local.json
+
+# Kişisel / akademik dosyalar — public repoya girmez
+rapor/
+Bitirme_Projesi_Raporu.pdf
+Bitirme_Projesi_Raporu.docx
+
+# Mobil uygulama ayrı bir repoda takip ediliyor
+mobile/
+docs/superpowers/

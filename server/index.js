@@ -11,6 +11,7 @@ const {
   getAllExpenses,
   getFilteredExpenses,
   getMonthlySummary,
+  getDailyExpenseTrend,
   deleteExpense,
   createUser,
   findUserByEmail,
@@ -26,6 +27,14 @@ const {
   deleteSubscription,
   getPendingPayments,
   getExpenseAnalysis,
+  getAllUsers,
+  resetPassword,
+  changePassword,
+  // E-posta doğrulama
+  setVerificationCode,
+  setResetCode,
+  verifyEmailCode,
+  verifyResetCodeAndUpdatePassword,
   // Telegram functions
   generateTelegramLinkCode,
   getTelegramStatus,
@@ -33,6 +42,7 @@ const {
   disconnectTelegram
 } = require('./database');
 const { generateToken, authMiddleware, adminMiddleware } = require('./auth');
+const { generateCode, sendVerificationEmail } = require('./services/emailService');
 const fs = require('fs');
 const path = require('path');
 const notificationService = require('./services/notificationService');
@@ -90,6 +100,17 @@ app.get('/api/subscription-catalog', (req, res) => {
     success: true,
     data: SUBSCRIPTION_CATALOG
   });
+});
+
+// GET /api/admin/users - Tüm kullanıcıları getir (Sadece Admin)
+app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const users = await getAllUsers();
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error('Kullanıcı listesi hatası:', error);
+    res.status(500).json({ success: false, error: 'Kullanıcılar getirilemedi' });
+  }
 });
 
 // POST /api/admin/update-catalog - Kataloğu güncelle (Sadece Admin)
@@ -197,11 +218,10 @@ app.get('/api/telegram/status', authMiddleware, async (req, res) => {
 // PUT /api/telegram/preferences - Bildirim tercihlerini güncelle
 app.put('/api/telegram/preferences', authMiddleware, async (req, res) => {
   try {
-    const { subscriptions, goals, weeklySummary } = req.body;
+    const { subscriptions, weeklySummary } = req.body;
 
     const result = await updateTelegramPreferences(req.userId, {
       subscriptions: subscriptions !== undefined ? subscriptions : true,
-      goals: goals !== undefined ? goals : true,
       weeklySummary: weeklySummary !== undefined ? weeklySummary : false
     });
 
@@ -261,15 +281,19 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     const user = await createUser(username, email, password);
-    const token = generateToken(user.id);
 
+    // Doğrulama kodu üret, kaydet ve e-posta ile gönder (10 dk geçerli)
+    const code = generateCode();
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    await setVerificationCode(user.id, code, expires);
+    await sendVerificationEmail(email, code, 'register');
+
+    // Token DÖNMEZ — kullanıcı önce e-posta kodunu doğrulamalı
     res.status(201).json({
       success: true,
-      message: 'Kayıt başarılı',
-      data: {
-        user: { id: user.id, username: user.username, email: user.email },
-        token
-      }
+      message: 'Kayıt başarılı. E-posta adresinize gönderilen doğrulama kodunu giriniz.',
+      requiresVerification: true,
+      email: user.email
     });
   } catch (error) {
     console.error('Kayıt hatası:', error);
@@ -277,6 +301,60 @@ app.post('/api/auth/register', async (req, res) => {
       success: false,
       error: error.message || 'Kayıt sırasında bir hata oluştu'
     });
+  }
+});
+
+// POST /api/auth/verify-email - Kayıt doğrulama kodunu kontrol et
+app.post('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ success: false, error: 'E-posta ve kod gereklidir' });
+    }
+
+    const result = await verifyEmailCode(email, code);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    // Doğrulama başarılı → artık giriş yapmış say, token döndür
+    const token = generateToken(result.user.id);
+    res.json({
+      success: true,
+      message: 'E-posta doğrulandı',
+      data: { user: result.user, token }
+    });
+  } catch (error) {
+    console.error('E-posta doğrulama hatası:', error);
+    res.status(500).json({ success: false, error: 'Doğrulama sırasında bir hata oluştu' });
+  }
+});
+
+// POST /api/auth/resend-code - Doğrulama kodunu yeniden gönder
+app.post('/api/auth/resend-code', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'E-posta gereklidir' });
+    }
+
+    const user = await findUserByEmail(email);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'Bu e-posta ile kayıtlı hesap bulunamadı' });
+    }
+    if (user.is_verified === 1) {
+      return res.status(400).json({ success: false, error: 'Bu hesap zaten doğrulanmış' });
+    }
+
+    const code = generateCode();
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    await setVerificationCode(user.id, code, expires);
+    await sendVerificationEmail(email, code, 'register');
+
+    res.json({ success: true, message: 'Yeni kod gönderildi' });
+  } catch (error) {
+    console.error('Kod yeniden gönderme hatası:', error);
+    res.status(500).json({ success: false, error: 'Kod gönderilirken bir hata oluştu' });
   }
 });
 
@@ -310,6 +388,16 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
+    // E-posta doğrulanmamışsa giriş engellenir; doğrulama akışına yönlendir
+    if (user.is_verified === 0) {
+      return res.status(403).json({
+        success: false,
+        requiresVerification: true,
+        email: user.email,
+        error: 'E-posta adresinizi doğrulamanız gerekiyor'
+      });
+    }
+
     const token = generateToken(user.id);
 
     res.json({
@@ -326,6 +414,76 @@ app.post('/api/auth/login', async (req, res) => {
       success: false,
       error: 'Giriş sırasında bir hata oluştu'
     });
+  }
+});
+
+// POST /api/auth/reset-password - 1. ADIM: E-postaya sıfırlama kodu gönder
+// (Artık şifre DEĞİŞTİRMEZ — önce e-posta sahipliği kod ile doğrulanır.)
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'E-posta gerekli' });
+
+    const user = await findUserByEmail(email);
+    if (!user) return res.status(404).json({ success: false, error: 'Bu e-posta ile kayıtlı hesap bulunamadı' });
+
+    // Sıfırlama kodu üret, kaydet, e-posta ile gönder (10 dk geçerli)
+    const code = generateCode();
+    const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    await setResetCode(email, code, expires);
+    await sendVerificationEmail(email, code, 'reset');
+
+    res.json({ success: true, message: 'Şifre sıfırlama kodu e-posta adresinize gönderildi' });
+  } catch (error) {
+    console.error('Şifre sıfırlama kodu hatası:', error);
+    res.status(500).json({ success: false, error: 'Kod gönderilirken bir hata oluştu' });
+  }
+});
+
+// POST /api/auth/reset-password/confirm - 2. ADIM: Kodu doğrula ve yeni şifreyi kaydet
+app.post('/api/auth/reset-password/confirm', async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code) return res.status(400).json({ success: false, error: 'E-posta ve kod gerekli' });
+    if (!newPassword || newPassword.length < 6)
+      return res.status(400).json({ success: false, error: 'Şifre en az 6 karakter olmalı' });
+
+    const result = await verifyResetCodeAndUpdatePassword(email, code, newPassword);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    res.json({ success: true, message: 'Şifreniz güncellendi' });
+  } catch (error) {
+    console.error('Şifre sıfırlama onay hatası:', error);
+    res.status(500).json({ success: false, error: 'Şifre güncellenirken bir hata oluştu' });
+  }
+});
+
+// POST /api/auth/change-password - Şifre değiştir (oturum açmış kullanıcı, mevcut şifre doğrulamalı)
+app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword) {
+      return res.status(400).json({ success: false, error: 'Mevcut şifre gerekli' });
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ success: false, error: 'Yeni şifre en az 6 karakter olmalı' });
+    }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ success: false, error: 'Yeni şifre mevcut şifreden farklı olmalı' });
+    }
+
+    await changePassword(req.userId, currentPassword, newPassword);
+    res.json({ success: true, message: 'Şifre güncellendi' });
+  } catch (error) {
+    // "Mevcut şifreniz hatalı" gibi doğrulama hataları için 400 döndür
+    if (error.message === 'Mevcut şifreniz hatalı' || error.message === 'Kullanıcı bulunamadı') {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    console.error('Şifre değiştirme hatası:', error);
+    res.status(500).json({ success: false, error: 'Şifre değiştirilirken hata oluştu' });
   }
 });
 
@@ -388,6 +546,23 @@ app.get('/api/expense-analysis', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Harcama analizi alınırken bir hata oluştu'
+    });
+  }
+});
+
+// GET /api/expense-trend - Son 30 günün günlük gerçek gider toplamı (trend grafiği)
+app.get('/api/expense-trend', authMiddleware, async (req, res) => {
+  try {
+    const trend = await getDailyExpenseTrend(req.userId);
+    res.json({
+      success: true,
+      data: trend
+    });
+  } catch (error) {
+    console.error('Harcama trendi hatası:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Harcama trendi alınırken bir hata oluştu'
     });
   }
 });

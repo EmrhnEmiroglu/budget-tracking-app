@@ -1,8 +1,19 @@
 const jwt = require('jsonwebtoken');
 const { findUserById } = require('./database');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'gelir-gider-secret-key-2025';
+// JWT imzalama anahtarı yalnızca .env'den okunur.
+// Koda gömülü bir yedek değer BİLEREK yoktur: kaynak kodu herkese açık olduğu
+// için gömülü anahtar, herkesin geçerli token üretebilmesi anlamına gelirdi.
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '7d';
+
+if (!JWT_SECRET) {
+    console.error('\n❌ JWT_SECRET tanımlı değil.\n');
+    console.error('   server/.env.example dosyasını server/.env olarak kopyalayın');
+    console.error('   ve JWT_SECRET satırına rastgele bir değer yazın. Üretmek için:\n');
+    console.error('   node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"\n');
+    process.exit(1);
+}
 
 // JWT Token oluştur
 const generateToken = (userId) => {

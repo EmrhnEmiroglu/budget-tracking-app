@@ -1,273 +1,250 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useOutletContext } from 'react-router-dom'
-import { Plus, Trash2, CheckCircle, Circle, StickyNote, Calendar, Clock, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Check, X, StickyNote } from 'lucide-react'
+import { Card, Badge, fmtDate } from '../components/ui'
 
-const API_URL = 'http://localhost:5000/api'
+import { API_URL } from '../config'
 
 export default function Notes() {
-    const { authFetch } = useAuth()
-    const { darkMode } = useOutletContext()
-    const [notes, setNotes] = useState([])
-    const [title, setTitle] = useState('')
-    const [content, setContent] = useState('')
-    const [dueDate, setDueDate] = useState('')
-    const [isAdding, setIsAdding] = useState(false)
+  const { authFetch } = useAuth()
+  const [notes, setNotes] = useState([])
+  const [tab, setTab] = useState('notes')
+  const [addModal, setAddModal] = useState(false)
 
-    useEffect(() => {
-        fetchNotes()
-    }, [])
+  useEffect(() => { fetchNotes() }, [])
 
-    const fetchNotes = async () => {
-        try {
-            const response = await authFetch(`${API_URL}/notes`)
-            const data = await response.json()
-            if (data.success) setNotes(data.data)
-        } catch (error) { console.error(error) }
-    }
+  const fetchNotes = async () => {
+    try {
+      const res = await authFetch(`${API_URL}/notes`)
+      const data = await res.json()
+      if (data.success) setNotes(data.data)
+    } catch { }
+  }
 
-    const addNote = async (e) => {
-        e.preventDefault()
-        if (!title.trim()) return
+  const addNote = async (fields) => {
+    try {
+      const res = await authFetch(`${API_URL}/notes`, {
+        method: 'POST',
+        body: JSON.stringify(fields)
+      })
+      const data = await res.json()
+      if (data.success) {
+        setNotes(p => [data.data, ...p])
+        setAddModal(false)
+      }
+    } catch { }
+  }
 
-        try {
-            const response = await authFetch(`${API_URL}/notes`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content, due_date: dueDate || null })
-            })
-            const data = await response.json()
-            if (data.success) {
-                setNotes([data.data, ...notes])
-                setTitle('')
-                setContent('')
-                setDueDate('')
-                setIsAdding(false)
-            }
-        } catch (error) { console.error(error) }
-    }
+  const toggleComplete = async (id, current) => {
+    try {
+      setNotes(p => p.map(n => n.id === id ? { ...n, is_completed: !current } : n))
+      await authFetch(`${API_URL}/notes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_completed: !current })
+      })
+    } catch { fetchNotes() }
+  }
 
-    const toggleComplete = async (id, currentStatus) => {
-        try {
-            setNotes(notes.map(n => n.id === id ? { ...n, is_completed: !currentStatus } : n))
-            await authFetch(`${API_URL}/notes/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_completed: !currentStatus })
-            })
-        } catch (error) {
-            console.error(error)
-            fetchNotes()
-        }
-    }
+  const deleteNote = async (id) => {
+    try {
+      setNotes(p => p.filter(n => n.id !== id))
+      await authFetch(`${API_URL}/notes/${id}`, { method: 'DELETE' })
+    } catch { fetchNotes() }
+  }
 
-    const deleteNote = async (id) => {
-        if (!window.confirm('Bu notu silmek istediğinize emin misiniz?')) return
+  const activeNotes = notes.filter(n => !n.is_completed)
+  const completedNotes = notes.filter(n => n.is_completed)
 
-        try {
-            setNotes(notes.filter(n => n.id !== id))
-            await authFetch(`${API_URL}/notes/${id}`, { method: 'DELETE' })
-        } catch (error) {
-            console.error(error)
-            fetchNotes()
-        }
-    }
+  const getDaysUntil = (dueDateStr) => {
+    if (!dueDateStr) return null
+    const due = new Date(dueDateStr)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return Math.round((due - today) / 86400000)
+  }
 
-    // Kalan süre hesaplama
-    const getRemainingTime = (dueDateStr) => {
-        if (!dueDateStr) return null
+  return (
+    <div className="px-8 py-6 space-y-5 rise-stagger" style={{ maxWidth: 1480, margin: '0 auto' }}>
 
-        const now = new Date()
-        const dueDate = new Date(dueDateStr)
-        const diffMs = dueDate - now
-        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60))
-
-        if (diffMs < 0) {
-            return { text: 'Süresi doldu', status: 'expired', diffMs }
-        } else if (diffHours < 24) {
-            return { text: `${diffHours} saat kaldı`, status: 'urgent', diffMs }
-        } else if (diffDays <= 2) {
-            return { text: `${diffDays} gün kaldı`, status: 'warning', diffMs }
-        } else if (diffDays <= 7) {
-            return { text: `${diffDays} gün kaldı`, status: 'normal', diffMs }
-        } else {
-            return { text: `${diffDays} gün kaldı`, status: 'safe', diffMs }
-        }
-    }
-
-    const getBadgeClass = (status) => {
-        switch (status) {
-            case 'expired': return darkMode ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-rose-100 text-rose-600 border-rose-200'
-            case 'urgent': return darkMode ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 'bg-orange-100 text-orange-600 border-orange-200'
-            case 'warning': return darkMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-amber-100 text-amber-600 border-amber-200'
-            case 'normal': return darkMode ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-blue-100 text-blue-600 border-blue-200'
-            case 'safe': return darkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-emerald-100 text-emerald-600 border-emerald-200'
-            default: return darkMode ? 'bg-zinc-500/20 text-zinc-400' : 'bg-slate-100 text-slate-600'
-        }
-    }
-
-    // Notları son tarihe göre sırala (yakın olanlar önce)
-    const sortedNotes = [...notes].sort((a, b) => {
-        // Tamamlanmış notlar en sona
-        if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1
-
-        // Son tarihi olmayanlar sona
-        if (!a.due_date && !b.due_date) return new Date(b.created_at) - new Date(a.created_at)
-        if (!a.due_date) return 1
-        if (!b.due_date) return -1
-
-        // Son tarihe göre sırala
-        return new Date(a.due_date) - new Date(b.due_date)
-    })
-
-    const cardClass = `p-6 rounded-3xl border transition-all duration-300 relative group ${darkMode ? 'bg-[#161616] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`
-    const inputClass = `w-full p-3 rounded-xl outline-none transition-all ${darkMode ? 'bg-black/20 border-white/10 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500'} border`
-
-    return (
-        <div className="space-y-8">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className={`text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>Notlar ve Hedefler</h1>
-                    <p className={`mt-1 ${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Hedeflerinizi belirleyin ve notlarınızı tutun</p>
-                </div>
-                <button
-                    onClick={() => setIsAdding(!isAdding)}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${isAdding
-                        ? (darkMode ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-slate-100 text-slate-700 hover:bg-slate-200')
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/20'
-                        }`}
-                >
-                    {isAdding ? 'Vazgeç' : <><Plus size={20} /> Yeni Ekle</>}
-                </button>
-            </div>
-
-            {/* Add Note Form */}
-            {isAdding && (
-                <form onSubmit={addNote} className={`p-6 rounded-3xl border animate-in slide-in-from-top-4 duration-300 ${darkMode ? 'bg-[#161616] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
-                    <div className="space-y-4">
-                        <div>
-                            <input
-                                type="text"
-                                placeholder="Başlık (Örn: Araba Birikimi)"
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                className={`${inputClass} font-bold text-lg`}
-                                autoFocus
-                            />
-                        </div>
-                        <div>
-                            <textarea
-                                placeholder="Detaylar..."
-                                value={content}
-                                onChange={(e) => setContent(e.target.value)}
-                                className={`${inputClass} min-h-[100px] resize-none`}
-                            />
-                        </div>
-                        <div>
-                            <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>
-                                <Calendar size={14} className="inline mr-1" /> Son Tarih (Opsiyonel)
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={dueDate}
-                                onChange={(e) => setDueDate(e.target.value)}
-                                className={inputClass}
-                            />
-                        </div>
-                        <div className="flex justify-end">
-                            <button
-                                type="submit"
-                                disabled={!title.trim()}
-                                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-500/20"
-                            >
-                                Kaydet
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            )}
-
-            {/* Notes Grid */}
-            {notes.length === 0 && !isAdding ? (
-                <div className={`text-center py-20 rounded-3xl border border-dashed ${darkMode ? 'border-white/10 bg-white/5' : 'border-slate-300 bg-slate-50'}`}>
-                    <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-4 ${darkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-100 text-indigo-500'}`}>
-                        <StickyNote size={32} />
-                    </div>
-                    <h3 className={`text-xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-slate-900'}`}>Henüz bir not eklemediniz</h3>
-                    <p className={`${darkMode ? 'text-zinc-500' : 'text-slate-500'}`}>Yeni bir hedef veya not eklemek için butona tıklayın.</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {sortedNotes.map(note => {
-                        const remaining = getRemainingTime(note.due_date)
-                        return (
-                            <div key={note.id} className={`${cardClass} hover:border-indigo-500/30 flex flex-col`}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className={`p-2.5 rounded-xl ${note.is_completed
-                                        ? (darkMode ? 'bg-emerald-500/10 text-emerald-500' : 'bg-emerald-100 text-emerald-600')
-                                        : (darkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
-                                        }`}>
-                                        <StickyNote size={20} />
-                                    </div>
-
-                                    {/* Kalan Süre Badge */}
-                                    {remaining && !note.is_completed && (
-                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${getBadgeClass(remaining.status)}`}>
-                                            {remaining.status === 'expired' ? <AlertTriangle size={12} /> : <Clock size={12} />}
-                                            {remaining.text}
-                                        </div>
-                                    )}
-
-                                    {note.is_completed && (
-                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
-                                            <CheckCircle size={12} /> Tamamlandı
-                                        </div>
-                                    )}
-                                </div>
-
-                                <h3 className={`text-lg font-bold mb-2 ${note.is_completed ? 'line-through opacity-50' : ''} ${darkMode ? 'text-white' : 'text-slate-900'}`}>
-                                    {note.title}
-                                </h3>
-
-                                {note.content && (
-                                    <p className={`text-sm mb-4 flex-1 whitespace-pre-wrap ${note.is_completed ? 'line-through opacity-50' : ''} ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>
-                                        {note.content}
-                                    </p>
-                                )}
-
-                                <div className={`mt-auto pt-4 border-t flex items-center justify-between text-xs border-dashed ${darkMode ? 'border-white/10' : 'border-slate-200'}`}>
-                                    <div className={`flex items-center gap-2 font-mono ${darkMode ? 'text-zinc-600' : 'text-slate-400'}`}>
-                                        <Calendar size={12} />
-                                        {new Date(note.created_at).toLocaleDateString('tr-TR')}
-                                    </div>
-
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            onClick={() => toggleComplete(note.id, note.is_completed)}
-                                            className={`p-2 rounded-lg transition-colors ${note.is_completed
-                                                ? 'text-emerald-500 hover:bg-emerald-500/10'
-                                                : (darkMode ? 'text-zinc-500 hover:text-white hover:bg-white/10' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100')
-                                                }`}
-                                            title={note.is_completed ? "Tamamlandı" : "Tamamla"}
-                                        >
-                                            {note.is_completed ? <CheckCircle size={18} /> : <Circle size={18} />}
-                                        </button>
-                                        <button
-                                            onClick={() => deleteNote(note.id)}
-                                            className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'
-                                                }`}
-                                            title="Sil"
-                                        >
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
+      {/* Tab bar + action */}
+      <div className="flex items-center justify-between">
+        <div className="toggle-pill">
+          {[['notes', 'Notlar', activeNotes.length], ['done', 'Tamamlanan', completedNotes.length]].map(([v, l, n]) => (
+            <button
+              key={v}
+              onClick={() => setTab(v)}
+              className="px-4 py-2 text-sm font-semibold rounded-full flex items-center gap-2"
+              style={{
+                background: tab === v ? 'var(--accent)' : 'transparent',
+                color: tab === v ? 'white' : 'var(--text-2)'
+              }}
+            >
+              {l}
+              <span
+                className="mono text-[10px] px-1.5 py-0.5 rounded"
+                style={{
+                  background: tab === v ? 'rgba(255,255,255,0.2)' : 'var(--surface-2)',
+                  color: tab === v ? 'white' : 'var(--text-3)'
+                }}
+              >
+                {n}
+              </span>
+            </button>
+          ))}
         </div>
-    )
+        <button
+          onClick={() => setAddModal(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm rounded-xl font-semibold btn-primary"
+        >
+          <Plus size={16} /> Yeni Not
+        </button>
+      </div>
+
+      {/* Notes masonry */}
+      {(tab === 'notes' ? activeNotes : completedNotes).length === 0 ? (
+        <Card>
+          <div className="flex flex-col items-center py-12 text-center">
+            <div
+              className="mb-4 w-16 h-16 rounded-3xl flex items-center justify-center"
+              style={{ background: 'color-mix(in oklab, var(--accent) 12%, transparent)', color: 'var(--accent)' }}
+            >
+              <StickyNote size={28} />
+            </div>
+            <div className="display text-lg font-semibold" style={{ color: 'var(--text)' }}>
+              {tab === 'notes' ? 'Henüz not yok' : 'Tamamlanan not yok'}
+            </div>
+            <div className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
+              {tab === 'notes' ? 'Hatırlatıcı veya not eklemek için yukarıdaki butonu kullanın.' : 'Tamamlanan notlar burada görünecek.'}
+            </div>
+            {tab === 'notes' && (
+              <button
+                onClick={() => setAddModal(true)}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 text-sm rounded-xl font-semibold btn-primary"
+              >
+                <Plus size={16} /> Yeni Not Ekle
+              </button>
+            )}
+          </div>
+        </Card>
+      ) : (
+        <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
+          {(tab === 'notes' ? activeNotes : completedNotes).map(n => {
+            const dueDays = getDaysUntil(n.due_date)
+            const tone = dueDays == null ? 'neutral' : dueDays <= 1 ? 'danger' : dueDays <= 5 ? 'warning' : 'neutral'
+            return (
+              <Card key={n.id} pad="p-5" className="break-inside-avoid mb-4 group">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {n.due_date && (
+                      <Badge tone={tone}>
+                        {dueDays == null ? '' : dueDays <= 0 ? 'geçti' : dueDays + ' gün'}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="opacity-0 group-hover:opacity-100 transition flex gap-1">
+                    <button
+                      onClick={() => toggleComplete(n.id, n.is_completed)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center"
+                      style={{ color: n.is_completed ? 'var(--success)' : 'var(--text-3)' }}
+                      title={n.is_completed ? 'Geri al' : 'Tamamla'}
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={() => deleteNote(n.id)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center"
+                      style={{ color: 'var(--text-3)' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="display text-[16px] font-semibold leading-snug"
+                  style={{
+                    color: 'var(--text)',
+                    textDecoration: n.is_completed ? 'line-through' : 'none',
+                    opacity: n.is_completed ? 0.5 : 1
+                  }}
+                >
+                  {n.title}
+                </div>
+
+                {n.content && (
+                  <div className="text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                    {n.content}
+                  </div>
+                )}
+
+                {n.due_date && (
+                  <div className="mt-3 text-[11px] mono flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
+                    {fmtDate(n.due_date.split('T')[0])}
+                  </div>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Add modal */}
+      {addModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setAddModal(false)}
+        >
+          <AddNoteForm
+            onClose={() => setAddModal(false)}
+            onSave={addNote}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddNoteForm({ onClose, onSave }) {
+  const [f, setF] = useState({ title: '', content: '', due_date: '' })
+
+  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
+
+  return (
+    <div
+      className="card w-[460px] max-w-full p-6 rise"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="display text-lg font-semibold mb-4" style={{ color: 'var(--text)' }}>Yeni Not</div>
+      <div className="space-y-3">
+        <div className="field px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-[0.15em] mono mb-1" style={{ color: 'var(--text-3)' }}>başlık</div>
+          <input value={f.title} onChange={set('title')} placeholder="Not başlığı" className="text-sm" autoFocus />
+        </div>
+        <div className="field px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-[0.15em] mono mb-1" style={{ color: 'var(--text-3)' }}>açıklama</div>
+          <textarea rows={3} value={f.content} onChange={set('content')} className="text-sm resize-none" placeholder="Detaylar..." />
+        </div>
+        <div className="field px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-[0.15em] mono mb-1" style={{ color: 'var(--text-3)' }}>son tarih</div>
+          <input type="date" value={f.due_date} onChange={set('due_date')} className="text-sm mono" />
+        </div>
+      </div>
+      <div className="mt-5 flex items-center justify-end gap-2">
+        <button
+          onClick={onClose}
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm rounded-xl font-medium"
+          style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+        >
+          <X size={14} /> İptal
+        </button>
+        <button
+          onClick={() => f.title.trim() && onSave({ title: f.title, content: f.content, due_date: f.due_date || null })}
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm rounded-xl font-semibold btn-primary"
+        >
+          <Check size={14} /> Kaydet
+        </button>
+      </div>
+    </div>
+  )
 }
