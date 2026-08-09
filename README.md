@@ -9,6 +9,11 @@ Modern, kullanıcı dostu ve tam özellikli kişisel finans yönetimi web uygula
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
 ![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram)
 
+> 📱 Bu uygulamanın mobil sürümü ayrı bir depoda:
+> [budget-tracker-expo](https://github.com/EmrhnEmiroglu/budget-tracker-expo)
+> (Expo + React Native). İki uygulama aynı backend'i kullanır; hesabın
+> ikisinde de geçerlidir.
+
 ---
 
 ## ✨ Özellikler
